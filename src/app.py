@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v41')
+        self.title('我的 Codex · 本地编程工作台 · v42')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)

@@ -1,0 +1,6 @@
+interface:
+  display_name: "自有 Android 演示界面"
+  short_description: "在用户授权的自有 Android 演示或测试 App 上实现和诊断局部界面效果、点击回调、延迟弹窗及可停止 F"
+  default_prompt: "使用 $android-demo-ui 完成我的需求，并给出真实可用的交付结果。"
+policy:
+  allow_implicit_invocation: true

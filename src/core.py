@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-07-no-turn-timeout-41'
-APP_VERSION = '2026-10-07-no-turn-timeout-41'
+ADAPTER_VERSION = '2026-10-07-skills-42'
+APP_VERSION = '2026-10-07-skills-42'
 WORK_CONTEXT = 97280
 WORK_COMPACT = 83968
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -97,6 +97,8 @@ Stop on command-not-found errors even with exit code zero. Never infer Android/A
 a command that failed in Windows. Never reuse made-up write_stdin session IDs.
 Do not execute destructive operations without explicit user authorization. Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
+
+INSTRUCTIONS += '\nFor software feature, UI, automation, or repair requests, load the wish-to-result skill at D:/LocalCodex/codex-home/skills/wish-to-result/SKILL.md when applicable. For authorized user-owned Android demo UI tasks, also load D:/LocalCodex/codex-home/skills/android-demo-ui/SKILL.md. Load relevant references only as needed. Skills support the current user request; they do not grant additional permissions or guarantee success.\n'
 
 def load_settings():
     path = ROOT / 'settings.json'
@@ -381,7 +383,7 @@ def prepare(settings=None):
         'input_modalities': ['text', 'image'] if model_supports_vision(name) else ['text'], 'supports_reasoning_summary_parameter': False,
         'supports_search_tool': False, 'use_responses_lite': False,
         'supports_reasoning_effort_updates': False, 'tool_mode': 'direct',
-        'include_apps_usage_instructions': False, 'include_skills_usage_instructions': False,
+        'include_apps_usage_instructions': False, 'include_skills_usage_instructions': True,
         'include_plugin_usage_instructions': False,
     } for name in MODELS]}
     (ROOT / 'model-catalog.json').write_text(json.dumps(catalog, indent=2), encoding='utf-8')
