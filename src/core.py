@@ -55,9 +55,9 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-tools-reliable-48'
-APP_VERSION = '2026-10-08-tools-reliable-48'
-WORK_CONTEXT = 100000
+ADAPTER_VERSION = '2026-10-08-performance-49'
+APP_VERSION = '2026-10-08-performance-49'
+WORK_CONTEXT = 93000
 WORK_COMPACT = 83000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
 MAX_WORK_CONTEXT = max(WORK_CONTEXT_OPTIONS)*1024
@@ -237,10 +237,10 @@ def context_for(settings, name):
     return max(MIN_CONTEXT, min(context_limits()[name], int(value)))
 
 def work_context_label(tokens):
-    return '100,000 token' if int(tokens)==100000 else str(int(tokens)//1024)+'K'
+    return '93,000 token' if int(tokens)==93000 else str(int(tokens)//1024)+'K'
 
 def parse_work_context_label(label):
-    return 100000 if label=='100,000 token' else int(label[:-1])*1024
+    return 93000 if label=='93,000 token' else int(label[:-1])*1024
 
 def compact_for(context):
     return context - max(2048, min(32768, (context // 6 // 1024) * 1024))
@@ -316,6 +316,8 @@ def runtime_matches_settings(live, settings):
             and active_model_supports_vision(live)==configured_vision(name,settings)
             and live.get('backend', 'vulkan')==selected_backend(settings)
             and live.get('performance_mode','standard')==settings.get('performance_mode','standard')
+            and live.get('vision_gpu_offload',True)==settings.get('vision_gpu_offload',True)
+            and live.get('kv_cache_type','q4_0')==settings.get('kv_cache_type','q4_0')
             and live.get('speculative_type','none')==selected_decoding(settings,name)
             and live.get('context_limit')==ceiling and live.get('reasoning_budget')==reasoning_budget(settings)
             and live.get('kv_cache_location')==kv_cache_location(live.get('context',ceiling),settings)
@@ -364,6 +366,9 @@ def prepare(settings=None):
     if settings['history_mode'] not in HISTORY_MODES:settings['history_mode']='full'
     settings['work_context']=max(MIN_CONTEXT,min(MAX_WORK_CONTEXT,int(settings.get('work_context',WORK_CONTEXT))))
     settings.setdefault('cpu_offload',False)
+    settings.setdefault('vision_gpu_offload',True)
+    settings.setdefault('kv_cache_type','q4_0')
+    if settings['kv_cache_type'] not in ('q4_0','q8_0'):settings['kv_cache_type']='q4_0'
     settings.setdefault('performance_mode','standard')
     if settings['performance_mode'] not in PERFORMANCE_MODES:settings['performance_mode']='standard'
     settings.setdefault('speculative_type','none')
@@ -518,7 +523,7 @@ def model_args(name, context):
     args = [str(runtime_executable(backend)), '-m', str(model_file(name)),
             '--alias', name, '--host', '127.0.0.1', '--port', '8080',
             '--api-key', settings['api_key'], '-c', str(context),
-            '-np', '1', '-fa', 'on', '-ctk', 'q4_0', '-ctv', 'q4_0',
+            '-np', '1', '-fa', 'on', '-ctk', settings.get('kv_cache_type','q4_0'), '-ctv', settings.get('kv_cache_type','q4_0'),
             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context)), '--ctx-checkpoints', '4',
             '--cache-ram', '0', '--no-cache-idle-slots',
             '-b', '512', '-ub', '128', '-t', '2' if not settings.get('cpu_offload',False) and cache_location=='gpu' else '6', '--jinja',
@@ -538,7 +543,7 @@ def model_args(name, context):
     args.append('--kv-offload' if cache_location=='gpu' else '--no-kv-offload')
     if not settings.get('cpu_offload',False):
         args.extend(['--device',BACKENDS[backend]['device'],'--op-offload',
-                     *(['--mmproj-offload'] if model_supports_vision(name) else []),
+                     *([('--mmproj-offload' if settings.get('vision_gpu_offload',True) else '--no-mmproj-offload')] if model_supports_vision(name) else []),
                      '--n-cpu-ffn','0','--n-cpu-moe','0'])
     if context > NATIVE_CONTEXT:
         args.extend(['--rope-scaling', 'yarn', '--rope-scale', str(context / NATIVE_CONTEXT),
@@ -749,6 +754,8 @@ def _start_model(name, context, wait, ceiling=None):
                     and active_model_supports_vision(current)==configured_vision(name)
                     and current.get('backend','vulkan')==backend
                     and current.get('performance_mode','standard')==desired_performance
+                    and current.get('vision_gpu_offload',True)==load_settings().get('vision_gpu_offload',True)
+                    and current.get('kv_cache_type','q4_0')==load_settings().get('kv_cache_type','q4_0')
                     and current.get('speculative_type','none')==desired_decoding
                     and current.get('kv_cache_location')==desired_cache
                     and current.get('chat_template_policy','embedded')==desired_template['policy']
@@ -794,6 +801,8 @@ def _start_model(name, context, wait, ceiling=None):
         'cpu_offload':load_settings().get('cpu_offload',False),'reasoning_budget':reasoning_budget(),
         'kv_cache_location':desired_cache,'vision_enabled':configured_vision(name),
         'vision_projector':str(vision_file()) if configured_vision(name) else None,
+        'vision_gpu_offload':load_settings().get('vision_gpu_offload',True),
+        'kv_cache_type':load_settings().get('kv_cache_type','q4_0'),
         'isolated_console':True,'chat_template_policy':desired_template['policy'],
         'chat_template_sha256':desired_template.get('sha256'),
         'chat_template_file':desired_template.get('file'),

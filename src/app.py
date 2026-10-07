@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v48')
+        self.title('我的 Codex · 本地编程工作台 · v49')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -375,7 +375,7 @@ class App(ctk.CTk):
         work_line=ctk.CTkFrame(options,fg_color='transparent')
         work_line.grid(row=4,column=0,sticky='w',padx=18,pady=8)
         ctk.CTkLabel(work_line,text='工作上下文',text_color=MUTED).pack(side='left',padx=(0,12))
-        self.work_picker=ctk.CTkOptionMenu(work_line,values=['100,000 token']+[f'{k}K' for k in WORK_CONTEXT_OPTIONS],width=140,
+        self.work_picker=ctk.CTkOptionMenu(work_line,values=['93,000 token']+[f'{k}K' for k in WORK_CONTEXT_OPTIONS],width=140,
             command=lambda value:self.preview_context(self.context_slider.get()),fg_color='#303742',button_color='#415b38')
         self.work_picker.pack(side='left')
         self.work_picker.set(work_context_label(self.settings.get('work_context',WORK_CONTEXT)))

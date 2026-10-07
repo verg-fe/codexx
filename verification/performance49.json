@@ -1,0 +1,35 @@
+{
+  "version": 49,
+  "context": 93000,
+  "compact": 83000,
+  "kv_cache_type": "q4_0",
+  "vision_gpu_offload": false,
+  "reasoning_effort": "xhigh",
+  "model": "Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S",
+  "cpu_vision_tests": [
+    {
+      "seconds": 11.15,
+      "correct": [
+        "Chinese title",
+        "order number 7319",
+        "colors",
+        "circle",
+        "triangle"
+      ]
+    },
+    {
+      "seconds": 10.54,
+      "correct": [
+        "red rectangle",
+        "blue circle",
+        "green triangle"
+      ]
+    }
+  ],
+  "gpu_memory_mib_before": 13432,
+  "gpu_memory_mib_after": 12801.6,
+  "shared_memory_mib_before": 1192.7,
+  "shared_memory_mib_after": 418,
+  "text_speed_after_change": "not benchmarked",
+  "q8_test": "cancelled by user"
+}

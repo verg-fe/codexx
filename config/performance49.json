@@ -1,0 +1,8 @@
+{
+  "context": 93000,
+  "compact": 83000,
+  "kv_cache_type": "q4_0",
+  "vision_gpu_offload": false,
+  "reasoning_effort": "xhigh",
+  "model": "Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S"
+}
