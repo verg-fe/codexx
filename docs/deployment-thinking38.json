@@ -1,0 +1,51 @@
+{
+  "installed": true,
+  "ui_pid": 11960,
+  "executable": "D:\\LocalCodex\\app\\MyCodex-thinking38\\MyCodex.exe",
+  "executable_sha256": "5677d510b0ffdcc4282182cce8ea0b283137d58ff24aa775b174fe26f1471b04",
+  "previous_program": "D:\\LocalCodex\\app\\MyCodex-guard37",
+  "settings_backup": "D:\\LocalCodex\\backups\\before-thinking38",
+  "version": "2026-10-07-qwen-deep-thinking-38",
+  "started_at": 1791350376.2586706,
+  "regression_tests_run": false,
+  "startup": {
+    "gateway": {
+      "status": "ok",
+      "adapter_version": "2026-10-07-deep-thinking-38"
+    },
+    "model": {
+      "status": "ok"
+    },
+    "pid": 7728,
+    "reasoning_budget": 16384,
+    "runtime_matches": true,
+    "generation_guard": {
+      "reasoning_tokens": 16384,
+      "reasoning_seconds": 900,
+      "generation_seconds": 1200,
+      "prefill_seconds": 300,
+      "turn_seconds": 3600,
+      "repeated_failures": 3,
+      "output_tokens": 32768,
+      "stall_seconds": 90
+    },
+    "reasoning_effort": "xhigh",
+    "engine_limits": [
+      97280,
+      62464
+    ],
+    "runtime_sampler": {
+      "temperature": 1.0,
+      "top_p": 0.949999988079071,
+      "top_k": 20,
+      "min_p": 0.0,
+      "presence_penalty": 0.0,
+      "repeat_penalty": 1.0
+    },
+    "model_directory": "G:\\LocalCodex\\models",
+    "fresh_speed_test": false,
+    "historical_decode_median_tps": 30.67,
+    "historical_decode_samples": 95,
+    "source": "Existing model.log: latest 100 generation records, exclude records with fewer than 100 output tokens"
+  }
+}

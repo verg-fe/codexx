@@ -27,7 +27,7 @@ from core import (ROOT, MODEL, MODELS, BACKENDS, HISTORY_MODES, PERFORMANCE_MODE
                   runtime_matches_settings, engine_config, engine_limits, memory_instructions)
 from core import refresh_gateway_for_current_app
 from core import gateway_api
-from generation_guard import GuardStore, guard_options
+from generation_guard import GuardStore, guard_options, GUARD_PROFILES, profile_label
 from session_workspaces import SessionWorkspaces
 
 ctk.set_appearance_mode('dark')
@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v37')
+        self.title('我的 Codex · 本地编程工作台 · v38')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -164,6 +164,7 @@ class App(ctk.CTk):
         self.effort = ctk.CTkOptionMenu(composer, values=['均衡思考', '深入思考', '快速思考'],
                           fg_color='#303742', button_color='#303742', width=125)
         self.effort.grid(row=1, column=0, sticky='w', padx=12, pady=10)
+        self.effort.set({'xhigh':'深入思考','medium':'均衡思考','low':'快速思考'}.get(self.settings.get('reasoning_effort'),'深入思考'))
         self.attach_button = self.button(composer, '添加图片', self.attach_image, width=90)
         self.attach_button.grid(row=1, column=0, sticky='w', padx=(148, 0), pady=10)
         self.stop_button = self.button(composer, '停止', self.interrupt, width=76)
@@ -298,14 +299,13 @@ class App(ctk.CTk):
         guards=ctk.CTkFrame(parent,fg_color='#222831')
         guards.grid(row=9,column=0,sticky='ew',padx=28,pady=12)
         ctk.CTkLabel(guards,text='防止思考和报错循环',font=('Microsoft YaHei UI',18,'bold')).pack(anchor='w',padx=18,pady=(14,5))
-        self.guard_picker=ctk.CTkOptionMenu(guards,values=['标准：思考 60 秒 · 单次生成 150 秒','严格：思考 30 秒 · 单次生成 90 秒','宽松：思考 120 秒 · 单次生成 300 秒'],
+        self.guard_picker=ctk.CTkOptionMenu(guards,values=list(GUARD_PROFILES),
             command=self.change_guard_limits,width=420,fg_color='#303742',button_color='#415b38')
         self.guard_picker.pack(anchor='w',padx=18,pady=8)
-        seconds=guard_options(self.settings)['reasoning_seconds']
-        self.guard_picker.set('严格：思考 30 秒 · 单次生成 90 秒' if seconds<=30 else
-            '宽松：思考 120 秒 · 单次生成 300 秒' if seconds>60 else '标准：思考 60 秒 · 单次生成 150 秒')
-        ctk.CTkLabel(guards,text='同一异常重复 3 次暂停；单任务最多 10 分钟。异常会保留日志并取消后台推理。\nAPI 报错后查证接口；未知工具、残缺参数和伪工具标记会被拦截。',
-            text_color=MUTED,justify='left',wraplength=800).pack(anchor='w',padx=18,pady=(4,14))
+        self.guard_picker.set(profile_label(self.settings))
+        self.guard_hint=ctk.CTkLabel(guards,text='',text_color=MUTED,justify='left',wraplength=800)
+        self.guard_hint.pack(anchor='w',padx=18,pady=(4,14))
+        self.update_guard_hint()
         ctk.CTkLabel(parent, text='为这台电脑配置的模型', font=('Microsoft YaHei UI', 23, 'bold')).grid(row=0, column=0, sticky='w', padx=28, pady=(25, 8))
         self.model_title = ctk.CTkLabel(parent, text=selected_model(self.settings)+'  ·  '+BACKENDS[selected_backend(self.settings)]['label'],
                      text_color=ACCENT, font=('Segoe UI', 15))
@@ -974,7 +974,8 @@ class App(ctk.CTk):
             state=GuardStore(ROOT).read(self.thread_id)
             elapsed=time.monotonic()-self.turn_started_at if self.turn_started_at else 0
             if not state.get('blocked') and elapsed>guard_options(self.settings)['turn_seconds']:
-                state=GuardStore(ROOT).write(self.thread_id,'本次任务超过 10 分钟，已暂停并保留进度；请查看结果后继续。','turn_timeout')
+                minutes=guard_options(self.settings)['turn_seconds']//60
+                state=GuardStore(ROOT).write(self.thread_id,'本次任务超过 '+str(minutes)+' 分钟，已暂停并保留进度；请查看结果后继续。','turn_timeout')
             if state.get('blocked') and state.get('id')!=self.guard_seen and self.turn_id:
                 self.guard_seen=state['id']
                 self.append('\n⚠ 已暂停：'+state['reason']+'\n',save=True)
@@ -984,14 +985,18 @@ class App(ctk.CTk):
     def change_guard_limits(self,value):
         if self.busy:
             self.append('\n› 当前任务结束后再修改防循环限制。\n',save=False)
-            current=guard_options(self.settings)['reasoning_seconds']
-            self.guard_picker.set('严格：思考 30 秒 · 单次生成 90 秒' if current<=30 else
-                '宽松：思考 120 秒 · 单次生成 300 秒' if current>60 else '标准：思考 60 秒 · 单次生成 150 秒')
+            self.guard_picker.set(profile_label(self.settings))
             return
-        reasoning,generation=(30,90) if value.startswith('严格') else (120,300) if value.startswith('宽松') else (60,150)
-        options=guard_options(self.settings);options.update(reasoning_seconds=reasoning,generation_seconds=generation)
+        if value not in GUARD_PROFILES:return
+        options=guard_options(self.settings);options.update(GUARD_PROFILES[value])
         self.settings['generation_guard']=options;save_settings(self.settings)
-        self.append('\n› 已保存限制：思考 '+str(reasoning)+' 秒，单次生成 '+str(generation)+' 秒。\n',save=False)
+        self.update_guard_hint()
+        self.append('\n› 已保存思考配置：'+value+'；总输出 '+str(options['output_tokens'])+' token。\n',save=False)
+        if self.rpc and server_ready() and not self.loading_model:self.launch_model()
+
+    def update_guard_hint(self):
+        options=guard_options(self.settings)
+        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次暂停；连续 {options['stall_seconds']} 秒无新内容则取消。\n单次生成最多 {options['generation_seconds']//60} 分钟；任务最多 {options['turn_seconds']//60} 分钟。日志与进度保留。")
 
     def poll_events(self):
         try:

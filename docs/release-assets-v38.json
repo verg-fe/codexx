@@ -1,0 +1,24 @@
+{
+  "tag": "v38-20261007",
+  "private_required": true,
+  "assets": [
+    {
+      "name": "MyCodex-v38-windows.zip",
+      "bytes": 74135790,
+      "sha256": "691458a54940a544c8bddf994d9e7246dcd11f7a0a932c6af7659ec7758ae3b0"
+    },
+    {
+      "name": "codexx-source-v38.zip",
+      "bytes": 34336259,
+      "sha256": "abc88c5030b4e9b73bb2cabe6bb74a9610b699a810d785a02c4d32d1e088730b"
+    },
+    {
+      "name": "current-v38-config-and-rollback-settings.zip",
+      "bytes": 9518,
+      "sha256": "34ab9ffe387f6f782a60b80fa3a3854d892ddb2b7da04d776ed1e86298f286f6"
+    }
+  ],
+  "credentials_redacted": true,
+  "models_included": false,
+  "local_original_settings_backup_modified": false
+}

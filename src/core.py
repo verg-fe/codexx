@@ -37,8 +37,8 @@ CONTEXT = 40960
 COMPACT = 37888
 MAX_CONTEXT = 276480
 GPU_CONTEXT_LIMIT = 109568
-REASONING_BUDGET = 1536
-OUTPUT_RESERVE = 8192
+REASONING_BUDGET = 16384
+OUTPUT_RESERVE = 32768
 NATIVE_CONTEXT = 262144
 THEORETICAL_CONTEXT = 1000000
 MIN_CONTEXT = 8192
@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-07-generation-guard-37'
-APP_VERSION = '2026-10-07-guard-session-folders-37'
+ADAPTER_VERSION = '2026-10-07-deep-thinking-38'
+APP_VERSION = '2026-10-07-qwen-deep-thinking-38'
 WORK_CONTEXT = 97280
 WORK_COMPACT = 83968
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -236,8 +236,13 @@ def engine_limits(settings, name=None):
     if settings.get('history_mode','full')=='memory':
         context=min(context,max(MIN_CONTEXT,min(MAX_WORK_CONTEXT,int(settings.get('work_context',WORK_CONTEXT)))))
         compact=MEMORY_COMPACT_TARGETS.get(context,context-max(2048,min(16384,context//4//1024*1024)))
-        return context,compact
-    return context,compact_for(context)
+    else:compact=compact_for(context)
+    # Keep room for real long reasoning and the answer before the input reaches
+    # the backend's total context window. Output tokens include thinking.
+    from generation_guard import guard_options
+    reserve=min(guard_options(settings)['output_tokens']+2048,max(4096,context//2))
+    compact=min(compact,max(2048,context-reserve))
+    return context,compact
 
 def engine_config(settings,name=None):
     context,compact=engine_limits(settings,name)
@@ -317,6 +322,11 @@ def prepare(settings=None):
     from directive_profiles import normalize_directive_settings
     settings = load_settings() if settings is None else settings
     from generation_guard import guard_options
+    if settings.get('thinking_profile_version',0)<38:
+        from generation_guard import DEFAULTS
+        settings['generation_guard']=dict(DEFAULTS)
+        settings['reasoning_effort']='xhigh'
+        settings['thinking_profile_version']=38
     from session_workspaces import DEFAULT_WORKSPACE_ROOT
     settings['generation_guard']=guard_options(settings)
     settings.setdefault('session_workspace_root',DEFAULT_WORKSPACE_ROOT)
@@ -352,7 +362,7 @@ def prepare(settings=None):
     (ROOT / 'instructions.md').write_text(INSTRUCTIONS, encoding='utf-8')
     catalog = {'models': [{
         'slug': name, 'display_name': MODELS[name]['label'],
-        'description': 'Personal local vision coding model' if model_supports_vision(name) else 'Personal local text coding model', 'default_reasoning_level': 'medium',
+        'description': 'Personal local vision coding model' if model_supports_vision(name) else 'Personal local text coding model', 'default_reasoning_level': settings.get('reasoning_effort','xhigh'),
         'supported_reasoning_levels': [{'effort': x, 'description': x} for x in ['low', 'medium', 'xhigh']],
         'shell_type': 'unified_exec', 'visibility': 'list', 'supported_in_api': True,
         'priority': 1, 'availability_nux': None, 'upgrade': None, 'model_messages': None,
@@ -375,7 +385,7 @@ def prepare(settings=None):
 model_provider = "qwen_local"
 model_context_window = {working_context}
 model_auto_compact_token_limit = {working_compact}
-model_reasoning_effort = "medium"
+model_reasoning_effort = "{settings.get('reasoning_effort','xhigh')}"
 model_reasoning_summary = "none"
 model_instructions_file = 'D:\LocalCodex\instructions.md'
 model_catalog_json = 'D:\LocalCodex\model-catalog.json'
@@ -477,14 +487,16 @@ def model_args(name, context):
     cache_location=kv_cache_location(context,settings)
     args = [str(runtime_executable(backend)), '-m', str(model_file(name)),
             '--alias', name, '--host', '127.0.0.1', '--port', '8080',
-            '--api-key'__REDACTED__'api_key'], '-c', str(context),
+            '--api-key', settings['api_key'], '-c', str(context),
             '-np', '1', '-fa', 'on', '-ctk', 'q4_0', '-ctv', 'q4_0',
             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context)), '--ctx-checkpoints', '4',
             '--cache-ram', '0', '--no-cache-idle-slots',
             '-b', '512', '-ub', '128', '-t', '2' if not settings.get('cpu_offload',False) and cache_location=='gpu' else '6', '--jinja',
-            '--chat-template-kwargs', '{"enable_thinking":true,"preserve_thinking":true,"reasoning_effort":"medium"}',
+            '--chat-template-kwargs', json.dumps({'enable_thinking':True,'preserve_thinking':True,'reasoning_effort':settings.get('reasoning_effort','xhigh')}),
             '--reasoning-budget', str(reasoning_budget(settings)), '-n', '-1',
+            '--reasoning-budget-message','Reasoning budget reached. Use the observed evidence to finish with a valid tool call or a concise answer.',
             '--temp', '1.0', '--top-p', '0.95', '--top-k', '20', '--min-p', '0.0',
+            '--presence-penalty','0.0','--repeat-penalty','1.0',
             '--slot-save-path', str(ROOT / 'cache'), '--metrics',
             '--spec-type', selected_decoding(settings,name), '--no-webui', '--image-max-tokens', '2048']
     if model_supports_vision(name):
@@ -855,7 +867,7 @@ def refresh_gateway_for_current_app():
         raise RuntimeError('本地接口状态刚发生变化，请重新打开工作台。')
     os.kill(int(old['ProcessId']),signal.SIGTERM)
     logs=ROOT/'logs'
-    with (logs/'gateway37.log').open('a',encoding='utf-8') as stream:
+    with (logs/'gateway38.log').open('a',encoding='utf-8') as stream:
         process=subprocess.Popen([sys.executable,'--gateway'],stdin=subprocess.DEVNULL,
             stdout=stream,stderr=stream,creationflags=NO_WINDOW)
     deadline=time.monotonic()+15
@@ -869,7 +881,7 @@ def refresh_gateway_for_current_app():
                     if json.load(response).get('adapter_version')==ADAPTER_VERSION:return
             except (OSError,ValueError):pass
             time.sleep(.2)
-        raise RuntimeError('新版本地接口未能启动，请查看 gateway37.log。')
+        raise RuntimeError('新版本地接口未能启动，请查看 gateway38.log。')
     except Exception:
         if process.poll() is None:
             process.terminate();process.wait(timeout=5)

@@ -487,6 +487,10 @@ class Handler(BaseHTTPRequestHandler):
                 requested=body.get(budget_field)
                 body[budget_field]=min(requested,options['output_tokens']) if isinstance(requested,int) and requested>0 else options['output_tokens']
                 thread_id=archive_thread_id(body.get('instructions'))
+                if route=='/v1/responses' and thread_id:
+                    # The desktop profile is the user's chosen token budget.
+                    # Do not let an engine's old model default silently shrink it.
+                    body[budget_field]=options['output_tokens']
                 advertised={t['name']:t for t in body.get('tools',[]) if isinstance(t,dict) and t.get('name')}
                 media_converted=normalize_media(body)
                 routing = route_inference(body,route,settings,name,media_converted)
