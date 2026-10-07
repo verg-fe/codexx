@@ -55,9 +55,9 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-unlimited-time-46'
-APP_VERSION = '2026-10-08-unlimited-time-46'
-WORK_CONTEXT = 108800
+ADAPTER_VERSION = '2026-10-08-context-100000-47'
+APP_VERSION = '2026-10-08-context-100000-47'
+WORK_CONTEXT = 100000
 WORK_COMPACT = 83000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
 MAX_WORK_CONTEXT = max(WORK_CONTEXT_OPTIONS)*1024
@@ -236,6 +236,12 @@ def context_for(settings, name):
     value = values.get(name, settings.get('context', CONTEXT) if selected_model(settings)==name else MODELS[name]['default_context'])
     return max(MIN_CONTEXT, min(context_limits()[name], int(value)))
 
+def work_context_label(tokens):
+    return '100,000 token' if int(tokens)==100000 else str(int(tokens)//1024)+'K'
+
+def parse_work_context_label(label):
+    return 100000 if label=='100,000 token' else int(label[:-1])*1024
+
 def compact_for(context):
     return context - max(2048, min(32768, (context // 6 // 1024) * 1024))
 
@@ -250,7 +256,7 @@ def engine_limits(settings, name=None):
     # the backend's total context window. Output tokens include thinking.
     from generation_guard import guard_options
     reserve=min(guard_options(settings)['output_tokens']+2048,max(4096,context//2))
-    compact=min(compact,max(2048,context-reserve))
+    compact=min(compact,max(2048,context-reserve)) if context!=WORK_CONTEXT else WORK_COMPACT
     return context,compact
 
 def engine_config(settings,name=None):
@@ -367,6 +373,7 @@ def prepare(settings=None):
     settings.setdefault('kv_cache_location','auto')
     if settings['kv_cache_location'] not in ('auto','gpu','ram'):
         settings['kv_cache_location']='auto'
+    settings['compact']=engine_limits(settings)[1]
     save_settings(settings)
     from skill_memory import install_bundled_skills
     bundle = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent

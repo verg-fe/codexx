@@ -309,6 +309,16 @@ def request_output_reserve(body):
     # This is allocation headroom only, never a generation or reasoning limit.
     return OUTPUT_RESERVE
 
+def fit_generation_to_window(body,route,context,prompt_tokens):
+    if context!=100000 or prompt_tokens is None:return {}
+    field='max_output_tokens' if route=='/v1/responses' else 'max_tokens' if route=='/v1/chat/completions' else 'n_predict'
+    remaining=max(1,context-int(prompt_tokens)-256)
+    budget=min(int(body[field]),remaining)
+    body[field]=budget
+    if isinstance(body.get('reasoning_budget_tokens'),int):
+        body['reasoning_budget_tokens']=min(body['reasoning_budget_tokens'],max(0,budget-4096))
+    return {'effective_output_budget':budget,'remaining_context':remaining,'effective_reasoning_budget':body.get('reasoning_budget_tokens')}
+
 def route_inference(body, route, settings, name, media_converted=0):
     ceiling=context_for(settings,name)
     start_model(name,ceiling,wait=True)
@@ -321,11 +331,13 @@ def route_inference(body, route, settings, name, media_converted=0):
         prompt_tokens=None
         count_error=type(error).__name__
     target=ceiling if prompt_tokens is None else runtime_context_for(settings,name,prompt_tokens,reserve)
+    fitted=fit_generation_to_window(body,route,target,prompt_tokens)
     previous=active_model()
     record={'model':name,'context_limit':ceiling,'prompt_tokens':prompt_tokens,
         'output_reserve':reserve,'target_context':target,'count_error':count_error,
         'media_converted_to_png':media_converted,
         'phase':'switching' if previous.get('context')!=target else 'ready'}
+    record.update(fitted)
     thread_id=archive_thread_id(body.get('instructions'))
     if thread_id:record['thread_id']=thread_id
     path=ROOT/'request-routing.json'

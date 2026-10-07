@@ -12,7 +12,7 @@ import traceback
 import uuid
 from token_speed import TokenSpeed
 from proxy_service import load_proxy_settings, save_proxy_settings, validate_proxy_settings
-from core import WORK_CONTEXT_OPTIONS, MAX_WORK_CONTEXT, configured_vision
+from core import WORK_CONTEXT_OPTIONS, MAX_WORK_CONTEXT, configured_vision, work_context_label, parse_work_context_label
 from task_artifacts import TaskArtifacts, FileLocks
 from directive_profiles import DIRECTIVE_MODES, DEFAULT_CUSTOM_TAG, selected_directive, build_directive
 from emotion_vectors import EMOTION_MODES,emotion_state,emotion_hint,MIN_EMOTION_STRENGTH,MAX_EMOTION_STRENGTH
@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v46')
+        self.title('我的 Codex · 本地编程工作台 · v47')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -375,10 +375,10 @@ class App(ctk.CTk):
         work_line=ctk.CTkFrame(options,fg_color='transparent')
         work_line.grid(row=4,column=0,sticky='w',padx=18,pady=8)
         ctk.CTkLabel(work_line,text='工作上下文',text_color=MUTED).pack(side='left',padx=(0,12))
-        self.work_picker=ctk.CTkOptionMenu(work_line,values=[f'{k}K' for k in WORK_CONTEXT_OPTIONS],width=140,
+        self.work_picker=ctk.CTkOptionMenu(work_line,values=['100,000 token']+[f'{k}K' for k in WORK_CONTEXT_OPTIONS],width=140,
             command=lambda value:self.preview_context(self.context_slider.get()),fg_color='#303742',button_color='#415b38')
         self.work_picker.pack(side='left')
-        self.work_picker.set(str(self.settings.get('work_context',WORK_CONTEXT)//1024)+'K')
+        self.work_picker.set(work_context_label(self.settings.get('work_context',WORK_CONTEXT)))
         ctk.CTkLabel(work_line,text='性能调度',text_color=MUTED).pack(side='left',padx=(24,12))
         self.performance_picker=ctk.CTkOptionMenu(work_line,values=list(PERFORMANCE_MODES.values()),width=230,
             fg_color='#303742',button_color='#415b38')
@@ -654,13 +654,13 @@ class App(ctk.CTk):
         self.context_slider.configure(state='disabled' if memory_mode else 'normal')
         self.work_picker.configure(state='normal' if memory_mode else 'disabled')
         if memory_mode:
-            requested=max(MIN_CONTEXT,min(MAX_WORK_CONTEXT,int(self.work_picker.get()[:-1])*1024))
+            requested=max(MIN_CONTEXT,min(MAX_WORK_CONTEXT,parse_work_context_label(self.work_picker.get())))
             if self.backend_picker.get()==BACKENDS['moe4all']['label']:
                 requested=min(requested,71680)
                 self.work_picker.set(str(requested//1024)+'K')
             # A larger working window needs an equally large service ceiling.
             # This is a preview; saved settings change only when Apply is used.
-            value=min(cap,max(value,requested))
+            value=min(cap,requested) if requested==WORK_CONTEXT else min(cap,max(value,requested))
             self.pending_context=value
             self.context_slider.set(value)
             candidate={**self.settings,'history_mode':'memory','work_context':requested,
@@ -696,7 +696,7 @@ class App(ctk.CTk):
         self.performance_picker.set(PERFORMANCE_MODES[self.settings.get('performance_mode','standard')])
         self.decoding_picker.set(DECODING_MODES[selected_decoding(self.settings)])
         self.history_picker.set(HISTORY_MODES[self.settings.get('history_mode','full')])
-        self.work_picker.set(str(self.settings.get('work_context',WORK_CONTEXT)//1024)+'K')
+        self.work_picker.set(work_context_label(self.settings.get('work_context',WORK_CONTEXT)))
         self.directive_picker.set(DIRECTIVE_MODES[selected_directive(self.settings)])
         self.directive_choice(self.directive_picker.get())
         self.emotion_picker.set(EMOTION_MODES[self.settings.get('emotion_mode','off')])
@@ -733,7 +733,7 @@ class App(ctk.CTk):
         candidate['performance_mode']=next(mode for mode,label in PERFORMANCE_MODES.items() if label==self.performance_picker.get())
         candidate['speculative_type']=next(mode for mode,label in DECODING_MODES.items() if label==self.decoding_picker.get())
         candidate['history_mode']=next(mode for mode,label in HISTORY_MODES.items() if label==self.history_picker.get())
-        candidate['work_context']=int(self.work_picker.get()[:-1])*1024
+        candidate['work_context']=parse_work_context_label(self.work_picker.get())
         candidate['kv_cache_location']=CACHE_OPTIONS[self.cache_picker.get()]
         try:
             directive=self.directive_candidate();build_directive(directive)
@@ -1665,7 +1665,7 @@ if __name__ == '__main__':
         app.withdraw();app.update()
         working,compact=engine_limits(app.settings)
         checks={'work_context_95k':working==WORK_CONTEXT,'auto_compact_82k':compact==WORK_COMPACT,
-                'picker_95k':app.work_picker.get()==str(WORK_CONTEXT//1024)+'K','send_button':bool(app.send_button.winfo_exists()),
+                'picker_95k':app.work_picker.get()==work_context_label(WORK_CONTEXT),'send_button':bool(app.send_button.winfo_exists()),
                 'draft_button':bool(app.draft_button.winfo_exists()),
                 'steer_hint':bool(app.steer_note.winfo_exists()),
                 'jack_xml_switch':bool(app.jack_xml_switch.winfo_exists()),
