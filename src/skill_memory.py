@@ -227,6 +227,20 @@ def powershell_path(root=None):
 
 def shell_environment(env, root=None):
     env = dict(env)
+    # Keep the programming agent and its tool children on the verified Python
+    # installation. This changes this process tree only, never Windows PATH.
+    python = Path.home() / 'AppData/Local/Programs/Python/Python312'
+    sdk = Path.home() / 'AppData/Local/VectorAndroidSdk/platform-tools'
+    prepend = []
+    if (python / 'python.exe').is_file():
+        prepend.extend((str(python), str(python / 'Scripts')))
+    if (sdk / 'adb.exe').is_file():
+        prepend.append(str(sdk))
+    github = Path(root or DEFAULT_ROOT) / 'github-upload-work/gh/bin'
+    if (github / 'gh.exe').is_file():
+        prepend.append(str(github))
+    if prepend:
+        env['PATH'] = os.pathsep.join(prepend) + os.pathsep + env.get('PATH', '')
     shell = powershell_path(root)
     if shell.name.lower() == 'pwsh.exe':
         env['PATH'] = str(shell.parent) + os.pathsep + env.get('PATH', '')
@@ -241,7 +255,7 @@ def local_run_utf8(command, cwd=None, timeout=60):
     prefix = "$u=[System.Text.UTF8Encoding]::new($false); [Console]::InputEncoding=$u; [Console]::OutputEncoding=$u; $OutputEncoding=$u; $PSDefaultParameterValues['Get-Content:Encoding']='utf8'; $PSDefaultParameterValues['Set-Content:Encoding']='utf8'; "
     encoded = base64.b64encode((prefix + command).encode('utf-16-le')).decode('ascii')
     shell = powershell_path()
-    env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'}
+    env = shell_environment(os.environ)
     process = subprocess.Popen([str(shell), '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
                                cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -269,7 +283,11 @@ def local_run_utf8(command, cwd=None, timeout=60):
 
 
 def schema(name, description, properties, required):
-    return {'name': name, 'description': description, 'inputSchema': {'type': 'object', 'properties': properties,
+    annotations = {'readOnlyHint': name in ('skill_search', 'skill_read', 'local_read_text'),
+                   'destructiveHint': name == 'local_run_utf8',
+                   'idempotentHint': name in ('skill_search', 'skill_read', 'local_read_text'),
+                   'openWorldHint': name == 'local_run_utf8'}
+    return {'name': name, 'description': description, 'annotations': annotations, 'inputSchema': {'type': 'object', 'properties': properties,
             'required': required, 'additionalProperties': False}}
 
 

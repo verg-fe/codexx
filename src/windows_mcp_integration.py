@@ -23,6 +23,10 @@ def config_fragment(root):
             f'command = {command}\nargs = {args}\n'
             'startup_timeout_sec = 60\ntool_timeout_sec = 45\n'
             'enabled = true\nrequired = false\n'
+            f'enabled_tools = {json.dumps(TOOLS)}\n'
+            '\n[mcp_servers.windows_desktop.tools.DisplayInventory]\napproval_mode = "approve"\n'
+            '\n[mcp_servers.windows_desktop.tools.Screenshot]\napproval_mode = "approve"\n'
+            '\n[mcp_servers.windows_desktop.tools.Snapshot]\napproval_mode = "approve"\n'
             '\n[mcp_servers.windows_desktop.env]\n'
             'ANONYMIZED_TELEMETRY = "false"\nPOSTHOG_API_KEY = ""\n'
             'PYTHONIOENCODING = "utf-8"\nWINDOWS_MCP_WATCHDOG = "false"\n')

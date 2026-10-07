@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-context-100000-47'
-APP_VERSION = '2026-10-08-context-100000-47'
+ADAPTER_VERSION = '2026-10-08-tools-reliable-48'
+APP_VERSION = '2026-10-08-tools-reliable-48'
 WORK_CONTEXT = 100000
 WORK_COMPACT = 83000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -413,6 +413,7 @@ project_doc_max_bytes = 12000
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 web_search = "disabled"
+mcp_optional_startup_grace_ms = 0
 
 [model_providers.qwen_local]
 name = "Qwen local on RX 9070"
@@ -440,12 +441,20 @@ sandbox = "unelevated"
     args=['--history-server','--history-root',str(ROOT)] if getattr(sys,'frozen',False) else \
         [str(Path(__file__).parent/'history_memory.py'),'--history-root',str(ROOT)]
     config+='\n[mcp_servers.local_history]\ncommand = '+json.dumps(command)+'\nargs = '+json.dumps(args)+'\nstartup_timeout_sec = 20\ntool_timeout_sec = 130\n'
+    for tool in ('skill_search', 'skill_read', 'skill_save', 'local_read_text'):
+        config += f'\n[mcp_servers.local_history.tools.{tool}]\napproval_mode = "approve"\n'
     web_args=['--web-tools'] if getattr(sys,'frozen',False) else [str(Path(__file__).parent/'web_tools.py')]
     config+='\n[mcp_servers.web_research]\ncommand = '+json.dumps(command)+'\nargs = '+json.dumps(web_args)+'\n'
     config+='env_vars = '+json.dumps(['LOCAL_CODEX_PROXY_URL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'])+'\n'
     config+='startup_timeout_sec = 20\ntool_timeout_sec = 50\n'
     from windows_mcp_integration import config_fragment
     config += config_fragment(ROOT)
+    ida_bridge = ROOT / 'tools' / 'ida-mcp' / 'ida_mcp_bridge.py'
+    if ida_bridge.is_file():
+        ida_python = Path.home() / 'AppData/Local/Programs/Python/Python312/python.exe'
+        config += '\n[mcp_servers.ida_local]\ncommand = ' + json.dumps(str(ida_python)) + '\nargs = ' + json.dumps([str(ida_bridge)]) + '\nstartup_timeout_sec = 20\ntool_timeout_sec = 100\nrequired = false\n'
+        for tool in ('check_connection', 'get_project_metadata', 'get_current_address', 'get_current_function', 'get_function_info_by_name', 'get_function_info_by_address'):
+            config += f'\n[mcp_servers.ida_local.tools.{tool}]\napproval_mode = "approve"\n'
     (ROOT / 'codex-home' / 'config.toml').write_text(config, encoding='utf-8')
     # Named profiles remain available in both the private and user's Codex home.
     home = Path.home() / '.codex'

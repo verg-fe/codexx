@@ -1,0 +1,10 @@
+{
+  "version": "v48",
+  "skills_create_update": "passed",
+  "frida_usb": "passed",
+  "windows_display_inventory": "passed",
+  "huihui_ida_connection_functions_decompile": "passed",
+  "context": 100000,
+  "compact": 83000,
+  "private_logs_included": false
+}
