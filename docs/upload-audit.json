@@ -1,7 +1,7 @@
 {
   "known_secret_values_redacted": 12,
   "redacted_files": 134,
-  "credential_files_excluded": 3,
+  "credential_files_excluded": 1,
   "models_included": false,
   "original_backup_modified": false,
   "archives": {
@@ -12,10 +12,10 @@
       "sha256": "bf97609ec91e96f571f6a4f9eeed98b2749a2c0f8cd75ff7eb9acd13981f0eb0"
     },
     "codexx-workspace-v36.zip": {
-      "files": 15096,
-      "input_bytes": 622809806,
-      "bytes": 391249815,
-      "sha256": "1c61b88e38af08573ac751dd64cd47d53f82a01589ec1b678c9d670cdd707aeb"
+      "files": 15097,
+      "input_bytes": 622813025,
+      "bytes": 391252444,
+      "sha256": "27ec22fa32c1d07c909b98de1670c1a03b92e5a67eaf4bd02cada49e6c2dc948"
     },
     "current-v36-config-and-reports.zip": {
       "files": 173,
@@ -24,10 +24,11 @@
       "sha256": "76cad93278eace8a065809d4e2de7e42c40050824d89bebddb710d1184cd6bc3"
     },
     "MyCodex-v35-backup-redacted.zip": {
-      "files": 18415,
-      "input_bytes": 5964079223,
-      "bytes": 2122443575,
-      "sha256": "a989292a27cc140b792b4ba6af49923fb23605b31a2cc566d42e9c7cddaa6897"
+      "files": 18816,
+      "input_bytes": 6069772180,
+      "bytes": 2224189896,
+      "sha256": "72df42a5e849ae49deb20848e4fe6f60b2338daededcf65b2fae31932e346a8d"
     }
-  }
+  },
+  "original_backup_git_metadata_included": true
 }
