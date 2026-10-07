@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v39')
+        self.title('我的 Codex · 本地编程工作台 · v40')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -689,7 +689,7 @@ class App(ctk.CTk):
         self.preview_emotion()
         self.context_info.configure(text=f"当前已应用：{HISTORY_MODES[self.settings.get('history_mode','full')]} · 工作上下文 {working:,} token · {compact:,} token 自动整理\n"
             +(f'GPU 计算 · 自动分页\nQ8 动态 KV · 空闲缓存到 G 盘（5GiB）' if moe else f'{execution} · {PERFORMANCE_MODES[self.settings.get("performance_mode","standard")]}\nQ4 KV 缓存位置：{cache_text} · 4 个有界检查点 · 旧提示 RAM 缓存关闭')+f"\n自动确认 · 思考预算 {guard_options(self.settings)['reasoning_tokens']:,} token · 防循环保护开启"
-            + ('\n原始会话和思考日志完整留存；历史工具按需查回，摘要可能遗漏信息。超时或重复异常会暂停。' if self.settings.get('history_mode')=='memory' else '')
+            + ('\n原始会话和思考日志完整留存；历史工具按需查回，摘要可能遗漏信息。超时会暂停；重复异常会提示修复并继续。' if self.settings.get('history_mode')=='memory' else '')
             + ('\nMTP 预测候选 token，再由 Jack 主模型验证；不使用未经验证的预测结果。' if selected_decoding(self.settings)=='draft-mtp' else '')
             + ('\n最高指令：'+DIRECTIVE_MODES[selected_directive(self.settings)]+' · 思考受防循环保护\n内部情绪 A：'+EMOTION_MODES[self.settings.get('emotion_mode','off')]
                 +f" {self.settings.get('emotion_strength',0.002):+.4f}"+'\n内部情绪 B：'+EMOTION_MODES[self.settings.get('emotion_secondary_mode','off')]
@@ -996,7 +996,7 @@ class App(ctk.CTk):
 
     def update_guard_hint(self):
         options=guard_options(self.settings)
-        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次暂停；连续 {options['stall_seconds']} 秒无新内容则取消。\n单次生成最多 {options['generation_seconds']//60} 分钟；任务最多 {options['turn_seconds']//60} 分钟。日志与进度保留。")
+        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次提示换方法继续；连续 {options['stall_seconds']} 秒无新内容则取消。\n单次生成最多 {options['generation_seconds']//60} 分钟；任务最多 {options['turn_seconds']//60} 分钟。日志与进度保留。")
 
     def poll_events(self):
         try:

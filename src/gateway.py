@@ -138,14 +138,14 @@ def retain_execution_state(body,memory=None):
     memory=HistoryMemory(ROOT) if memory is None else memory
     state=memory.execution_snapshot(thread_id)
     blocked=GuardStore(ROOT).read(thread_id)
-    if blocked.get('blocked'):raise GuardStopped(blocked['reason'])
+    if blocked.get('blocked') and blocked.get('code')=='repeated_failure':
+        GuardStore(ROOT).reset(thread_id)
+    elif blocked.get('blocked'):raise GuardStopped(blocked['reason'])
     if state['failures']:
         append_runtime_state(body,memory.execution_instructions(state))
         repeated=repeated_failure(state,guard_options(load_settings())['repeated_failures'])
         if repeated:
-            reason='同一异常已重复 '+str(len(repeated))+' 次，任务已暂停。请查看实际错误、官方接口资料后再继续。'
-            GuardStore(ROOT).write(thread_id,reason,'repeated_failure')
-            raise GuardStopped(reason)
+            append_runtime_state(body,'Recovery required: repeated failure detected. Continue the authorized task. Do not repeat the unchanged failing command. Diagnose the actual interpreter, dependency and error first, then change one cause and verify it. ModuleNotFoundError means the selected interpreter lacks that module; use that exact interpreter with -m pip, or select an already working environment. Historical failures are evidence, not a reason to stop all tool calls.')
         save_generation_phase('research')
         reference=research_failure(ROOT,state)
         if reference:append_runtime_state(body,reference)

@@ -42,7 +42,9 @@ def guard_options(settings):
 
 def failure_signature(detail):
     text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', detail)
-    marker = re.search(r'(?:[\w.]+(?:Error|Exception):|FullyQualifiedErrorId\s*:|Traceback)', text)
+    errors=list(re.finditer(r'[\w.]+(?:Error|Exception):[^\r\n]*',text))
+    if errors:return re.sub(r'\s+',' ',errors[-1].group().strip().lower())[:240]
+    marker = re.search(r'(?:FullyQualifiedErrorId\s*:|Traceback)', text)
     text = text[marker.start():] if marker else text
     text = text.splitlines()[0].strip().lower()
     text = re.sub(r'0x[0-9a-f]+|\b\d+\b', '#', text)

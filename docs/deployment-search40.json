@@ -1,0 +1,11 @@
+{
+  "installed": true,
+  "executable": "D:\\LocalCodex\\app\\MyCodex-search40\\MyCodex.exe",
+  "executable_sha256": "80030d0e48b2bb7bc3d7fd45eb109b9b328b99a7b1d8d709e573640b9a630185",
+  "previous_program": "D:\\LocalCodex\\app\\MyCodex-debug39",
+  "settings_backup": "D:\\LocalCodex\\backups\\before-search40",
+  "version": "2026-10-07-search-recovery-40",
+  "started_at": 1791363073.505785,
+  "regression_tests_run": false,
+  "activation": "pending"
+}
