@@ -3,23 +3,23 @@
   "assets": [
     {
       "name": "MyCodex-v37-windows.zip",
-      "bytes": 74133837,
-      "sha256": "39234acd3e7b1830b0fa1d0d2017605cea6ed7536056a2ac04250565122267a3"
+      "bytes": 74134786,
+      "sha256": "d515d1f08ed05ec5d1a2aed48f4ba38c5a145d19f60d08ac44b808e8993d60e9"
     },
     {
       "name": "codexx-source-v37.zip",
-      "bytes": 34331777,
-      "sha256": "5bcdcee81d2fa50ff2f8ee208f23840e81b3e43198f8372875590fc9d5c3fb79"
+      "bytes": 34331757,
+      "sha256": "6dea46a1f083a30de3a94d5d4085b883eda4dc4362da599ffea24f5da0060cb6"
     },
     {
       "name": "MyCodex-v36-backup-redacted.zip",
       "bytes": 130649479,
-      "sha256": "261f05af95319e150e816cf7bd2064a9759c8b813dac820aabc653d08a59eeeb"
+      "sha256": "c6aa6f3ce865551c9e1112986449bfb85ced3e7d6b52e17774efdced2005cd50"
     },
     {
       "name": "current-v37-config-and-reports.zip",
-      "bytes": 8704,
-      "sha256": "0d76fe51c59a3f2574b94d401158bade1b94cf9f674c6c9f1fdfb6e2b7d790d9"
+      "bytes": 8706,
+      "sha256": "16ad6650deb5138900259dd0025dcafbf5cebf4ef257643d42996282b6b8d318"
     }
   ],
   "private_required": true,
@@ -29,27 +29,27 @@
   "archives": {
     "MyCodex-v37-windows.zip": {
       "files": 204,
-      "input_bytes": 175006380,
-      "bytes": 74133837,
-      "sha256": "39234acd3e7b1830b0fa1d0d2017605cea6ed7536056a2ac04250565122267a3"
+      "input_bytes": 175006487,
+      "bytes": 74134786,
+      "sha256": "d515d1f08ed05ec5d1a2aed48f4ba38c5a145d19f60d08ac44b808e8993d60e9"
     },
     "codexx-source-v37.zip": {
       "files": 100,
-      "input_bytes": 92259364,
-      "bytes": 34331777,
-      "sha256": "5bcdcee81d2fa50ff2f8ee208f23840e81b3e43198f8372875590fc9d5c3fb79"
+      "input_bytes": 92259396,
+      "bytes": 34331757,
+      "sha256": "6dea46a1f083a30de3a94d5d4085b883eda4dc4362da599ffea24f5da0060cb6"
     },
     "MyCodex-v36-backup-redacted.zip": {
       "files": 1076,
       "input_bytes": 539804061,
       "bytes": 130649479,
-      "sha256": "261f05af95319e150e816cf7bd2064a9759c8b813dac820aabc653d08a59eeeb"
+      "sha256": "c6aa6f3ce865551c9e1112986449bfb85ced3e7d6b52e17774efdced2005cd50"
     },
     "current-v37-config-and-reports.zip": {
       "files": 9,
-      "input_bytes": 23407,
-      "bytes": 8704,
-      "sha256": "0d76fe51c59a3f2574b94d401158bade1b94cf9f674c6c9f1fdfb6e2b7d790d9"
+      "input_bytes": 23406,
+      "bytes": 8706,
+      "sha256": "16ad6650deb5138900259dd0025dcafbf5cebf4ef257643d42996282b6b8d318"
     }
   }
 }

@@ -1,11 +1,11 @@
 {
   "installed": true,
-  "ui_pid": 13792,
+  "ui_pid": 13136,
   "executable": "D:\\LocalCodex\\app\\MyCodex-guard37\\MyCodex.exe",
-  "executable_sha256": "6b015734a669eb3c04c20b9c683fb2374e3c6d61ade1c69b59ce8feb445633a6",
+  "executable_sha256": "469998e5f15226fe8fc970ed0dc6e28e1bf246a645c85fa5f30a5dc4ef8f4989",
   "backup": "C:\\my_projects\\MyCodex-v36-backup-20261007-125505",
   "app_version": "2026-10-07-guard-session-folders-37",
-  "started_at": 1791349526.7945051,
+  "started_at": 1791349839.237543,
   "validation": "Build completed; startup health and process evidence recorded separately. No regression test suite run.",
   "startup": {
     "gateway": {
@@ -15,7 +15,7 @@
     "model": {
       "status": "ok"
     },
-    "pid": 10624,
+    "pid": 15876,
     "model_path": "G:\\LocalCodex\\models\\Jack-3.8-27B-V2-VL-16GB-VRAM.gguf",
     "reasoning_budget": 1536,
     "runtime_matches": true,

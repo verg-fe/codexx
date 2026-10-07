@@ -95,8 +95,16 @@ Windows 本地编程工作台，当前维护源码在 `src/`。
     if git('status','--porcelain'):git('commit','-m','Add finite inference guards and per-chat workspaces in v37')
     commit=git('rev-parse','HEAD')
     github.ensure_private();git('push','origin','main')
-    if not git('tag','--list',TAG):git('tag','-a',TAG,'-m','Codex v37 bounded generation and session directories')
-    git('push','origin','refs/tags/'+TAG)
+    if not git('tag','--list',TAG):
+        git('tag','-a',TAG,'-m','Codex v37 bounded generation and session directories')
+        git('push','origin','refs/tags/'+TAG)
+    elif git('rev-parse',TAG+'^{commit}')!=commit:
+        previous_tag=git('rev-parse','refs/tags/'+TAG)
+        remote_ref=git('ls-remote','origin','refs/tags/'+TAG).split()[0]
+        if remote_ref!=previous_tag:raise RuntimeError('Tag changed remotely; preserving it')
+        git('tag','-f','-a',TAG,'-m','Codex v37 bounded generation and session directories')
+        git('push','--force-with-lease=refs/tags/'+TAG+':'+previous_tag,'origin','refs/tags/'+TAG)
+    else:git('push','origin','refs/tags/'+TAG)
     notes=WORK/'release-notes.md'
     notes.write_text('''# 我的 Codex v37
 
@@ -117,11 +125,15 @@ Windows 本地编程工作台，当前维护源码在 `src/`。
     for item in assets:
         remote=present.get(item['name'])
         if remote:
-            if remote.get('digest')!='sha256:'+item['sha256']:raise RuntimeError('Existing asset changed: '+item['name'])
+            if remote.get('digest')!='sha256:'+item['sha256']:
+                if release.get('immutable'):raise RuntimeError('Release is immutable')
+                pending.append(item)
         else:pending.append(item)
+    if pending and not release['draft']:
+        github.run([github.GH,'release','edit',TAG,'--repo',github.NAME,'--draft=true'])
     print(json.dumps(dict(phase='uploading v37',assets=len(assets),bytes=sum(a['bytes'] for a in pending))),flush=True)
     def upload(item):
-        github.run([github.GH,'release','upload',TAG,ASSETS/item['name'],'--repo',github.NAME],timeout=7200)
+        github.run([github.GH,'release','upload',TAG,ASSETS/item['name'],'--repo',github.NAME,'--clobber'],timeout=7200)
         return item['name']
     with ThreadPoolExecutor(max_workers=3) as executor:
         for job in as_completed([executor.submit(upload,a) for a in pending]):print(json.dumps({'uploaded':job.result()}),flush=True)
