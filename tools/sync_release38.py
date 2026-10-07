@@ -4,6 +4,8 @@ from datetime import datetime,timezone
 import json
 from pathlib import Path
 import shutil
+import sys
+import time
 import prepare_github_upload as packaging
 import upload_github_private as github
 
@@ -72,6 +74,9 @@ def main():
     commit=git('rev-parse','HEAD');github.ensure_private();git('push','origin','main')
     if not git('tag','--list',TAG):git('tag','-a',TAG,'-m','Codex v38 researched deep thinking profile')
     git('push','origin','refs/tags/'+TAG)
+    publish(assets,commit)
+
+def publish(assets,commit):
     notes=WORK/'release-notes.md'
     notes.write_text('''# 我的 Codex v38 · 千问深思考配置
 
@@ -86,7 +91,12 @@ def main():
     if not any(r['tag_name']==TAG for r in github.api('repos/verg-fe/codexx/releases?per_page=100')):
         github.run([github.GH,'release','create',TAG,'--repo',github.NAME,'--verify-tag','--draft',
             '--title','我的 Codex v38 · 千问深思考配置','--notes-file',notes])
-    existing={a['name']:a for a in github.current_release()['assets']}
+    release=None
+    for attempt in range(12):
+        try:release=github.current_release();break
+        except StopIteration:time.sleep(2)
+    if release is None:raise RuntimeError('New release is not visible yet; retry --publish-prepared')
+    existing={a['name']:a for a in release['assets']}
     pending=[]
     for item in assets:
         if item['name'] in existing:
@@ -113,4 +123,14 @@ def main():
     (ROOT/'github-upload-v38.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps({k:report[k] for k in ('complete','private','release','commit','all_remote_sha256_match')}),flush=True)
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    if '--publish-prepared' in sys.argv:
+        github.ensure_private()
+        manifest_path=ASSETS/'release-assets-v38.json'
+        assets=json.loads(manifest_path.read_text(encoding='utf-8'))['assets']
+        assets.append(dict(name=manifest_path.name,bytes=manifest_path.stat().st_size,sha256=packaging.digest(manifest_path)))
+        for asset in assets:
+            if packaging.digest(ASSETS/asset['name'])!=asset['sha256']:raise RuntimeError('Prepared asset changed')
+        commit=github.run([github.GIT,'rev-parse','HEAD'],cwd=REPO)
+        publish(assets,commit)
+    else:main()
