@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-07-skills-42'
-APP_VERSION = '2026-10-07-skills-42'
+ADAPTER_VERSION = '2026-10-07-windows-mcp-43'
+APP_VERSION = '2026-10-07-windows-mcp-43'
 WORK_CONTEXT = 97280
 WORK_COMPACT = 83968
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -432,6 +432,8 @@ sandbox = "unelevated"
     config+='\n[mcp_servers.web_research]\ncommand = '+json.dumps(command)+'\nargs = '+json.dumps(web_args)+'\n'
     config+='env_vars = '+json.dumps(['LOCAL_CODEX_PROXY_URL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'])+'\n'
     config+='startup_timeout_sec = 20\ntool_timeout_sec = 50\n'
+    from windows_mcp_integration import config_fragment
+    config += config_fragment(ROOT)
     (ROOT / 'codex-home' / 'config.toml').write_text(config, encoding='utf-8')
     # Named profiles remain available in both the private and user's Codex home.
     home = Path.home() / '.codex'
