@@ -1,0 +1,13 @@
+{
+  "source_directory": "D:\\LocalCodex\\source",
+  "files": {
+    "app.py": "3f3f0a033f22ef595641ebcde41757c2135d0dd4c54e9e6a3c0cff6f47f80b4c",
+    "core.py": "dd3ed33f57bab07bb928901e6de2b1cc31c9aab57bf20021ef43172ce89761d6",
+    "gateway.py": "00cf2811187562aa1be182fe548c94faa2f55e027aad6c7124e70d825c5e7f2b",
+    "directive_profiles.py": "a0269f4a00688c4bcac811255fb0e16ac18b47f16ee8992dccda2bd1dd93da35",
+    "model_templates.py": "7966128c5cb36bdd07b380ee6fb7300fe86b98a86d1d5287d4668d496b58f98d",
+    "emotion_vectors.py": "97f5d897a447692cc13ae31288cbed11f8bc4198cba0e211b80dc2c477b59620",
+    "emotion_probe.py": "d85c58bb7f33a4f924142ba58b0a33d1b43e9463957688fdab13c13d82b6d118",
+    "emotion_extract.py": "631e1c573fdbd8f055a1d6126988353a67fc5e585be134155cda617cfcceca64"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "repo": "verg-fe/codexx",
+  "private_required": true,
+  "tag": "v36-20261007",
+  "created_at": "2026-10-07T04:23:29.412887+00:00",
+  "assets": [
+    {
+      "name": "MyCodex-v36-windows.zip",
+      "bytes": 74109114,
+      "sha256": "bf97609ec91e96f571f6a4f9eeed98b2749a2c0f8cd75ff7eb9acd13981f0eb0",
+      "archive": "MyCodex-v36-windows.zip"
+    },
+    {
+      "name": "codexx-workspace-v36.zip",
+      "bytes": 391249815,
+      "sha256": "1c61b88e38af08573ac751dd64cd47d53f82a01589ec1b678c9d670cdd707aeb",
+      "archive": "codexx-workspace-v36.zip"
+    },
+    {
+      "name": "current-v36-config-and-reports.zip",
+      "bytes": 438889,
+      "sha256": "76cad93278eace8a065809d4e2de7e42c40050824d89bebddb710d1184cd6bc3",
+      "archive": "current-v36-config-and-reports.zip"
+    },
+    {
+      "name": "MyCodex-v35-backup-redacted.zip.part001",
+      "bytes": 536870912,
+      "sha256": "1abb218fcf80d8a058881bc6905d33c4cc50af68c34b458d9ef112c0097b21b7",
+      "archive": "MyCodex-v35-backup-redacted.zip"
+    },
+    {
+      "name": "MyCodex-v35-backup-redacted.zip.part002",
+      "bytes": 536870912,
+      "sha256": "d5f19ef6fe19852d745f945dd54bb4f47ebf078fa4c47754fcf1f2106e08262b",
+      "archive": "MyCodex-v35-backup-redacted.zip"
+    },
+    {
+      "name": "MyCodex-v35-backup-redacted.zip.part003",
+      "bytes": 536870912,
+      "sha256": "e6bc54b55e46cad45059a9f12267b4ead98af33911081b2f9ebbb046240e4409",
+      "archive": "MyCodex-v35-backup-redacted.zip"
+    },
+    {
+      "name": "MyCodex-v35-backup-redacted.zip.part004",
+      "bytes": 511830839,
+      "sha256": "fddfbc0cc9ec2465a10170394fec44905d4834cedeebeb1adb3d5225d1680be5",
+      "archive": "MyCodex-v35-backup-redacted.zip"
+    }
+  ],
+  "archives": {
+    "MyCodex-v36-windows.zip": {
+      "files": 204,
+      "input_bytes": 174982028,
+      "bytes": 74109114,
+      "sha256": "bf97609ec91e96f571f6a4f9eeed98b2749a2c0f8cd75ff7eb9acd13981f0eb0"
+    },
+    "codexx-workspace-v36.zip": {
+      "files": 15096,
+      "input_bytes": 622809806,
+      "bytes": 391249815,
+      "sha256": "1c61b88e38af08573ac751dd64cd47d53f82a01589ec1b678c9d670cdd707aeb"
+    },
+    "current-v36-config-and-reports.zip": {
+      "files": 173,
+      "input_bytes": 2803701,
+      "bytes": 438889,
+      "sha256": "76cad93278eace8a065809d4e2de7e42c40050824d89bebddb710d1184cd6bc3"
+    },
+    "MyCodex-v35-backup-redacted.zip": {
+      "files": 18415,
+      "input_bytes": 5964079223,
+      "bytes": 2122443575,
+      "sha256": "a989292a27cc140b792b4ba6af49923fb23605b31a2cc566d42e9c7cddaa6897"
+    }
+  },
+  "models_included": false,
+  "credentials_redacted": true,
+  "local_backup_modified": false
+}

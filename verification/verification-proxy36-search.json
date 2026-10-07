@@ -1,0 +1,38 @@
+{
+  "checks": {
+    "real_search_results": true,
+    "real_page_read": true,
+    "repeated_search_cached": true
+  },
+  "search_seconds": 2.58,
+  "sources": [
+    {
+      "engine": "Bing",
+      "results": 10
+    },
+    {
+      "engine": "DuckDuckGo",
+      "results": 0
+    }
+  ],
+  "results": [
+    {
+      "title": "Python 3.14.8 documentation",
+      "url": "https://docs.python.org/",
+      "snippet": "This page is licensed under the Python Software Foundation License Version 2. Examples, recipes, and other code in the documentation are additionally licensed under the Zero Clause BSD License.",
+      "engine": "Bing"
+    },
+    {
+      "title": "The Python Tutorial — Python 3.14.8 documentation",
+      "url": "https://docs.python.org/3/tutorial/index.html",
+      "snippet": "Python is an easy to learn, powerful programming language. It has efficient high-level data structures and a simple but effective approach to object-oriented programming.",
+      "engine": "Bing"
+    }
+  ],
+  "page": {
+    "url": "https://docs.python.org/3/",
+    "title": "3.14.8 Documentation",
+    "characters": 1500
+  },
+  "ok": true
+}

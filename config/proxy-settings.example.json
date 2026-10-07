@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "server": "YOUR_SERVER",
+  "port": 443,
+  "ws_path": "/connect",
+  "sni": "YOUR_SERVER",
+  "ws_host": "YOUR_SERVER",
+  "uuid": ""
+}

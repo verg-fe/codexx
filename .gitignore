@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+node_modules/
+.env*
+auth.json
+proxy-settings.json
+*.gguf
+*.exe
+*.dll
+*.zip
+*.part[0-9]*
+*.pid
+*.lock

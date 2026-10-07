@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "directory_button_exists": true,
+    "directory_persisted": true,
+    "model_path_updates_without_restart": true,
+    "vision_path_follows_directory": true,
+    "cancel_preserves_settings": true,
+    "previous_model_location_detected": true,
+    "legacy_service_path_checked": true,
+    "new_model_location_accepted": true,
+    "proxy_controls_exist": true
+  },
+  "ok": true
+}

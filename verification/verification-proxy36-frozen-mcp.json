@@ -1,0 +1,35 @@
+{
+  "checks": {
+    "frozen_stdio_initializes": true,
+    "frozen_tools_registered": true,
+    "frozen_real_search_via_proxy": true,
+    "frozen_reads_official_page_via_proxy": true,
+    "frozen_exits_cleanly": true,
+    "proxy_cleaned_up": true
+  },
+  "tool_names": [
+    "search_web",
+    "read_webpage"
+  ],
+  "search_sources": [
+    {
+      "engine": "Bing",
+      "results": 10
+    },
+    {
+      "engine": "DuckDuckGo",
+      "results": 0
+    }
+  ],
+  "search_links": [
+    "https://docs.python.org/3/library/pathlib.html",
+    "https://docs.python.org/3/library/os.path.html"
+  ],
+  "read_page": {
+    "url": "https://docs.python.org/3/library/pathlib.html",
+    "title": "pathlib — Object-oriented filesystem paths — Python 3.14.8 documentation",
+    "chars": 2200
+  },
+  "elapsed_seconds": 5.64,
+  "ok": true
+}

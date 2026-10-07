@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "checks": {
+    "one_click_proxy_button": true,
+    "button_applies_toggle": true,
+    "model_button_persists_path": true,
+    "all_component_paths_change": true,
+    "search_tool_registered": true,
+    "proxy_forwarded_to_search": true,
+    "mcp_time_limit": true
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "checks": {
+    "actual_powershell_failures_recognized": true,
+    "normal_zero_exit_preserved": true,
+    "code_listing_not_false_failure": true,
+    "latest_user_steering_retained": true,
+    "unexecuted_tool_text_marked": true
+  },
+  "observed_zero_exit_exceptions": 2,
+  "failure_classes": [
+    "The property 'OutputWritten' cannot be found on this object. Verify that the property exists and can be set.\r\nAt C:\\my_projects\\win_factory\\run_frida2.ps1:24 ch",
+    "The property 'OutputDataReceived' cannot be found on this object. Verify that the property exists and can be set.\r\nAt C:\\my_projects\\win_factory\\run_frida3.ps1:",
+    "      #37 pc 0000000000095bc0  /apex/com.android.runtime/lib64/bionic/libc.so (_\n\u001b[23;80H__start_thread+64) (BuildId: 84a42637b3a421b801818f5793418fca)\n***\n\nTha"
+  ],
+  "ordered_user_and_literal_events": [
+    [
+      3,
+      "user",
+      "<environment_context>\n  <cwd>C:\\my_projects\\win_factory</cwd>\n  <shell>powershell</shell>\n  <current_date>2026-10-07</current_date>\n  <timezone>Asia/S"
+    ],
+    [
+      6,
+      "user",
+      "我已经连上了一个root的带有frida的手机桌面上有一个红花frida演示的app 你需要用frida注入这个app然后实现点击登录弹出黑花并且1秒后弹出输入账号密码的界面不必有任何后端功能只需要生成界面即可"
+    ],
+    [
+      157,
+      "user",
+      "Frida 没丢，红后专用版在：\n- 电脑客户端：C:\\Users\\18213\\AppData\\Local\\RedQueen\\frida-client-17.22.2\\Scripts\\frida.exe\n- 红花测试脚本：C:\\my_projects\\my_ai\\workspace\\frida-fl"
+    ],
+    [
+      562,
+      "user",
+      "那个按钮其实是我点的"
+    ],
+    [
+      574,
+      "literal-tool",
+      "<tool_call>\n<function=mcp__local_history__history_checkpoint>\n<parameter=thread_id>\n01a11418-69c6-7a"
+    ],
+    [
+      595,
+      "user",
+      "。。。。。你还是自动点吧 加油我睡觉去了 只是刚刚实在是看不下去了"
+    ]
+  ],
+  "ok": true
+}

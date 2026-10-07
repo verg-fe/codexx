@@ -1,0 +1,14 @@
+{
+  "adapter_version": "2026-10-03-emotion-bounds-27",
+  "files": {
+    "app.py": "6dba9f750723288b5396b5a5a7da4df225342f3a859ff1bb6f70fc4b3be0b512",
+    "core.py": "7d1b8780224c728de1f33fa768dd23ade3ccca3496aa04a85f4bfae1cb330700",
+    "gateway.py": "00cf2811187562aa1be182fe548c94faa2f55e027aad6c7124e70d825c5e7f2b",
+    "emotion_vectors.py": "e687cca0631897a6c738d6436be4b7907d22d73b9cedc1e869ba0b4b773b58ec",
+    "model_templates.py": "7966128c5cb36bdd07b380ee6fb7300fe86b98a86d1d5287d4668d496b58f98d",
+    "directive_profiles.py": "a0269f4a00688c4bcac811255fb0e16ac18b47f16ee8992dccda2bd1dd93da35",
+    "task_artifacts.py": "c524eba526176b98213017e7d8d65be535e71fcf354f6bb8c3f1e136be262231",
+    "history_memory.py": "7491737115fa7e8223cb9edcfcc8cecc36f6194afb232d301c58c2ae12a47267",
+    "conversations.py": "f6d4db8997d20ab27c58c40ea887fa96943bacc948035af80056b066bd0db0cd"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "version": "2026-10-07-proxy-model-location-36",
+  "installed_at": "2026-10-07T04:10:30.955782+00:00",
+  "source": "C:\\Users\\18213\\Desktop\\codexx\\release36",
+  "exe": "D:\\LocalCodex\\app\\MyCodex-proxy36\\MyCodex.exe",
+  "previous_exe": "D:\\LocalCodex\\app\\MyCodex-moe35-final\\MyCodex.exe",
+  "backup": "C:\\my_projects\\MyCodex-v35-backup-20261007-104748",
+  "launcher": "C:\\Users\\18213\\Desktop\\我的Codex.cmd",
+  "activation": "next desktop launch after the existing task finishes",
+  "existing_processes_interrupted": false,
+  "installed_files": 204,
+  "all_installed_sha256_match": true,
+  "exe_sha256": "e87b248c4e8ff38385e549adb65be9f3c8d9ae5e3dd484f6ebfdadd60a46bb3e",
+  "proxy_exe_sha256": "7bbef1dea9189ee12799ae834ea4b4658355da25c47a21ad8804904c0ccd9410"
+}

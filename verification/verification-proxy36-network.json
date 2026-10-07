@@ -1,0 +1,23 @@
+{
+  "checks": {
+    "official_config_parse": true,
+    "child_proxy_environment": true,
+    "localhost_bypass": true,
+    "tunnel_process_stopped": true,
+    "listener_closed": true,
+    "temporary_credentials_removed": true
+  },
+  "https": [
+    {
+      "url": "https://www.google.com/generate_204",
+      "status": 204,
+      "reachable": true
+    },
+    {
+      "url": "https://api.openai.com/v1/models",
+      "reachable": false,
+      "error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1082)>"
+    }
+  ],
+  "ok": false
+}

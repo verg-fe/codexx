@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "checks": {
+    "actual_button_enables_proxy": true,
+    "actual_engine_has_search_server": true,
+    "actual_button_disables_proxy": true,
+    "previous_tunnel_terminated": true
+  }
+}
