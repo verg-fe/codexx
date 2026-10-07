@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-upgrade-45'
-APP_VERSION = '2026-10-08-upgrade-45'
+ADAPTER_VERSION = '2026-10-08-unlimited-time-46'
+APP_VERSION = '2026-10-08-unlimited-time-46'
 WORK_CONTEXT = 108800
 WORK_COMPACT = 83000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -415,7 +415,7 @@ experimental_bearer_token = "{settings['api_key']}"
 requires_openai_auth = false
 request_max_retries = 0
 stream_max_retries = 0
-stream_idle_timeout_ms = {(settings['generation_guard']['prefill_seconds']+settings['generation_guard']['generation_seconds'])*1000}
+stream_idle_timeout_ms = 2147483647
 
 [features]
 memories = false

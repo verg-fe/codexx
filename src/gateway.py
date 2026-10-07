@@ -529,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
                     except (OSError,ValueError,RuntimeError,sqlite3.Error) as error:
                         print('History trace link unavailable: '+type(error).__name__,flush=True)
                 save_generation_phase('waiting', trace_name=self.trace.path.name if self.trace.path else None)
-        upstream=http.client.HTTPConnection('127.0.0.1',8080,timeout=options['prefill_seconds']+options['generation_seconds'])
+        upstream=http.client.HTTPConnection('127.0.0.1',8080,timeout=None if inference else options['prefill_seconds'])
         if inference:
             watch=InferenceWatch(ROOT,thread_id,options,upstream,self.connection,active_model().get('pid'),tool_enabled=tool_execution_enabled)
             watch.start()

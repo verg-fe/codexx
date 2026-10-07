@@ -1,4 +1,4 @@
-"""Finite inference budgets, durable stop reasons and real socket cancellation."""
+"""Token budgets, durable stop reasons and real socket cancellation; no elapsed generation limit."""
 import collections
 import hashlib
 import json
@@ -10,14 +10,14 @@ import threading
 import time
 import uuid
 
-DEFAULTS = dict(reasoning_tokens=16384, reasoning_seconds=900, generation_seconds=1200,
+DEFAULTS = dict(reasoning_tokens=16384, reasoning_seconds=0, generation_seconds=0,
                 prefill_seconds=300, turn_seconds=0, repeated_failures=3, output_tokens=32768,
-                stall_seconds=90)
+                stall_seconds=0)
 
 GUARD_PROFILES = {
-    '日常：8K 思考 · 最多 8 分钟': dict(reasoning_tokens=8192,output_tokens=16384,reasoning_seconds=480,generation_seconds=720,turn_seconds=0),
-    '推荐：16K 思考 · 最多 15 分钟': dict(reasoning_tokens=16384,output_tokens=32768,reasoning_seconds=900,generation_seconds=1200,turn_seconds=0),
-    '复杂：32K 思考 · 最多 30 分钟': dict(reasoning_tokens=32768,output_tokens=49152,reasoning_seconds=1800,generation_seconds=2400,turn_seconds=0),
+    '日常：8K 思考 · 不限时': dict(reasoning_tokens=8192,output_tokens=16384,reasoning_seconds=0,generation_seconds=0,turn_seconds=0),
+    '推荐：16K 思考 · 不限时': dict(reasoning_tokens=16384,output_tokens=32768,reasoning_seconds=0,generation_seconds=0,turn_seconds=0),
+    '复杂：32K 思考 · 不限时': dict(reasoning_tokens=32768,output_tokens=49152,reasoning_seconds=0,generation_seconds=0,turn_seconds=0),
 }
 
 def profile_label(settings):
@@ -27,9 +27,9 @@ def profile_label(settings):
 
 def guard_options(settings):
     stored = settings.get('generation_guard', {})
-    ranges = dict(reasoning_tokens=(1024,65536), reasoning_seconds=(60,3600),
-                  generation_seconds=(120,4800), prefill_seconds=(30,900), turn_seconds=(0,0),
-                  repeated_failures=(2,5), output_tokens=(4096,98304),stall_seconds=(30,300))
+    ranges = dict(reasoning_tokens=(1024,65536), reasoning_seconds=(0,0),
+                  generation_seconds=(0,0), prefill_seconds=(30,900), turn_seconds=(0,0),
+                  repeated_failures=(2,5), output_tokens=(4096,98304),stall_seconds=(0,0))
     result = {}
     for name, default in DEFAULTS.items():
         try: value = int(stored.get(name, default))
@@ -37,7 +37,6 @@ def guard_options(settings):
         low, high = ranges[name]
         result[name] = max(low,min(high,value))
     result['output_tokens']=max(result['output_tokens'],result['reasoning_tokens']+4096)
-    result['generation_seconds']=max(result['generation_seconds'],result['reasoning_seconds']+120)
     return result
 
 def failure_signature(detail):
@@ -157,14 +156,6 @@ class InferenceWatch:
                     self.stop('客户端已断开，后台推理已取消。',notify=False);return
             except OSError:
                 self.stop('客户端已断开，后台推理已取消。',notify=False);return
-            if self.generated is None and now-self.started>self.options['prefill_seconds']:
-                self.stop('输入处理超过时间限制，已停止本轮；请缩短上下文或降低窗口。');return
-            if self.generated is not None and now-self.generated>self.options['generation_seconds']:
-                self.stop('单次生成超过时间限制，已停止本轮并保留日志。');return
-            if self.generated is not None and now-self.last_progress>self.options['stall_seconds']:
-                self.stop('生成已连续 '+str(self.options['stall_seconds'])+' 秒没有新内容，已取消卡住的推理。');return
-            if self.reasoning is not None and now-self.reasoning>self.options['reasoning_seconds']:
-                self.stop('思考超过时间限制，已停止本轮；请根据实际报错继续最小验证。');return
 
     def event(self, event):
         kind=event.get('type','');now=time.monotonic()

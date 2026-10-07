@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v45')
+        self.title('我的 Codex · 本地编程工作台 · v46')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -986,7 +986,17 @@ class App(ctk.CTk):
             self.background(lambda: self.rpc.request('turn/interrupt',
                    {'threadId': self.thread_id, 'turnId': self.turn_id}))
 
+    def set_task_awake(self, active):
+        active = bool(active)
+        if os.name != 'nt' or getattr(self, '_task_awake', None) == active:
+            return
+        import ctypes
+        flags = 0x80000000 | (0x00000001 if active else 0)
+        if ctypes.windll.kernel32.SetThreadExecutionState(flags):
+            self._task_awake = active
+
     def poll_generation_guard(self):
+        self.set_task_awake(self.busy or self.loading_model)
         if self.busy and self.thread_id:
             state=GuardStore(ROOT).read(self.thread_id)
             if state.get('blocked') and state.get('id')!=self.guard_seen and self.turn_id:
@@ -1009,7 +1019,7 @@ class App(ctk.CTk):
 
     def update_guard_hint(self):
         options=guard_options(self.settings)
-        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次提示换方法继续；连续 {options['stall_seconds']} 秒无新内容则取消。\n单次生成最多 {options['generation_seconds']//60} 分钟；任务无整轮时长限制。日志与进度保留。")
+        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次提示换方法继续；长思考或暂时无新输出不会自动取消。\n思考、单次生成及整轮任务均无时长限制。日志与进度保留。")
 
     def poll_events(self):
         try:
@@ -1590,6 +1600,7 @@ class App(ctk.CTk):
             self.after(200,self.close_after_interrupt)
             return
         self.save_transcript()
+        self.set_task_awake(False)
         self.artifact_locks.close()
         if self.rpc:
             self.rpc.close()
