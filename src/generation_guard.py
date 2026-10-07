@@ -11,13 +11,13 @@ import time
 import uuid
 
 DEFAULTS = dict(reasoning_tokens=16384, reasoning_seconds=900, generation_seconds=1200,
-                prefill_seconds=300, turn_seconds=3600, repeated_failures=3, output_tokens=32768,
+                prefill_seconds=300, turn_seconds=0, repeated_failures=3, output_tokens=32768,
                 stall_seconds=90)
 
 GUARD_PROFILES = {
-    '日常：8K 思考 · 最多 8 分钟': dict(reasoning_tokens=8192,output_tokens=16384,reasoning_seconds=480,generation_seconds=720,turn_seconds=3600),
-    '推荐：16K 思考 · 最多 15 分钟': dict(reasoning_tokens=16384,output_tokens=32768,reasoning_seconds=900,generation_seconds=1200,turn_seconds=3600),
-    '复杂：32K 思考 · 最多 30 分钟': dict(reasoning_tokens=32768,output_tokens=49152,reasoning_seconds=1800,generation_seconds=2400,turn_seconds=7200),
+    '日常：8K 思考 · 最多 8 分钟': dict(reasoning_tokens=8192,output_tokens=16384,reasoning_seconds=480,generation_seconds=720,turn_seconds=0),
+    '推荐：16K 思考 · 最多 15 分钟': dict(reasoning_tokens=16384,output_tokens=32768,reasoning_seconds=900,generation_seconds=1200,turn_seconds=0),
+    '复杂：32K 思考 · 最多 30 分钟': dict(reasoning_tokens=32768,output_tokens=49152,reasoning_seconds=1800,generation_seconds=2400,turn_seconds=0),
 }
 
 def profile_label(settings):
@@ -28,7 +28,7 @@ def profile_label(settings):
 def guard_options(settings):
     stored = settings.get('generation_guard', {})
     ranges = dict(reasoning_tokens=(1024,65536), reasoning_seconds=(60,3600),
-                  generation_seconds=(120,4800), prefill_seconds=(30,900), turn_seconds=(600,14400),
+                  generation_seconds=(120,4800), prefill_seconds=(30,900), turn_seconds=(0,0),
                   repeated_failures=(2,5), output_tokens=(4096,98304),stall_seconds=(30,300))
     result = {}
     for name, default in DEFAULTS.items():

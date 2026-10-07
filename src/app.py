@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v40')
+        self.title('我的 Codex · 本地编程工作台 · v41')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -972,10 +972,6 @@ class App(ctk.CTk):
     def poll_generation_guard(self):
         if self.busy and self.thread_id:
             state=GuardStore(ROOT).read(self.thread_id)
-            elapsed=time.monotonic()-self.turn_started_at if self.turn_started_at else 0
-            if not state.get('blocked') and elapsed>guard_options(self.settings)['turn_seconds']:
-                minutes=guard_options(self.settings)['turn_seconds']//60
-                state=GuardStore(ROOT).write(self.thread_id,'本次任务超过 '+str(minutes)+' 分钟，已暂停并保留进度；请查看结果后继续。','turn_timeout')
             if state.get('blocked') and state.get('id')!=self.guard_seen and self.turn_id:
                 self.guard_seen=state['id']
                 self.append('\n⚠ 已暂停：'+state['reason']+'\n',save=True)
@@ -996,7 +992,7 @@ class App(ctk.CTk):
 
     def update_guard_hint(self):
         options=guard_options(self.settings)
-        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次提示换方法继续；连续 {options['stall_seconds']} 秒无新内容则取消。\n单次生成最多 {options['generation_seconds']//60} 分钟；任务最多 {options['turn_seconds']//60} 分钟。日志与进度保留。")
+        self.guard_hint.configure(text=f"思考预算 {options['reasoning_tokens']:,} token；总输出 {options['output_tokens']:,} token（含思考）。\n同一异常重复 {options['repeated_failures']} 次提示换方法继续；连续 {options['stall_seconds']} 秒无新内容则取消。\n单次生成最多 {options['generation_seconds']//60} 分钟；任务无整轮时长限制。日志与进度保留。")
 
     def poll_events(self):
         try:
