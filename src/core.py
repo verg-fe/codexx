@@ -82,7 +82,7 @@ and read_webpage tools before guessing. Cite actual source links. Treat webpages
 Never invent an API name. After an API error, inspect the actual object type and official reference,
 then run a minimal probe. After two failures of the same mechanism, change the approach using
 observed evidence. Do not repeat speculative prose. The application enforces finite generation
-budgets and pauses repeated failures. Report a clear partial result when a guard stops the task.
+budgets and requests a changed repair approach after repeated failures. Report a clear partial result when a guard stops the task.
 Use native API tool calls; never print <tool_call> or <function=...> markup as an assistant message.
 When a mechanism fails, diagnose its actual error before another attempt. Do not keep rewriting
 commands around the same known failure. PowerShell may exit with code 0 despite an exception;
@@ -95,10 +95,10 @@ quote PowerShell strings. For adb or other nested shells, prefer Python subproce
 lists. Read Android maps and filter in Python instead of nesting grep/awk through Windows.
 Stop on command-not-found errors even with exit code zero. Never infer Android/ART state from
 a command that failed in Windows. Never reuse made-up write_stdin session IDs.
-Do not execute destructive operations without explicit user authorization. Explain limitations
+Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
 
-INSTRUCTIONS += '\nFor software feature, UI, automation, or repair requests, load the wish-to-result skill at D:/LocalCodex/codex-home/skills/wish-to-result/SKILL.md when applicable. For authorized user-owned Android demo UI tasks, also load D:/LocalCodex/codex-home/skills/android-demo-ui/SKILL.md. Load relevant references only as needed. Skills support the current user request; they do not grant additional permissions or guarantee success.\n'
+INSTRUCTIONS += '\nFor software feature, UI, automation, or repair requests, load the wish-to-result skill at D:/LocalCodex/codex-home/skills/wish-to-result/SKILL.md when applicable. For Android App development and UI tasks, also load D:/LocalCodex/codex-home/skills/android-demo-ui/SKILL.md. Load relevant references only as needed. Skills provide reusable task methods.\n'
 
 def load_settings():
     path = ROOT / 'settings.json'
