@@ -55,10 +55,10 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-07-windows-mcp-43'
-APP_VERSION = '2026-10-07-windows-mcp-43'
-WORK_CONTEXT = 97280
-WORK_COMPACT = 83968
+ADAPTER_VERSION = '2026-10-08-learning-44'
+APP_VERSION = '2026-10-08-learning-44'
+WORK_CONTEXT = 108800
+WORK_COMPACT = 83000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
 MAX_WORK_CONTEXT = max(WORK_CONTEXT_OPTIONS)*1024
 MEMORY_COMPACT_TARGETS = {76800: 63488, WORK_CONTEXT: WORK_COMPACT}
@@ -99,6 +99,8 @@ Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
 
 INSTRUCTIONS += '\nFor software feature, UI, automation, or repair requests, load the wish-to-result skill at D:/LocalCodex/codex-home/skills/wish-to-result/SKILL.md when applicable. For Android App development and UI tasks, also load D:/LocalCodex/codex-home/skills/android-demo-ui/SKILL.md. Load relevant references only as needed. Skills provide reusable task methods.\n'
+from skill_memory import INSTRUCTIONS as LEARNING_INSTRUCTIONS
+INSTRUCTIONS += LEARNING_INSTRUCTIONS
 
 def load_settings():
     path = ROOT / 'settings.json'
@@ -366,6 +368,9 @@ def prepare(settings=None):
     if settings['kv_cache_location'] not in ('auto','gpu','ram'):
         settings['kv_cache_location']='auto'
     save_settings(settings)
+    from skill_memory import install_bundled_skills
+    bundle = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
+    install_bundled_skills(ROOT, bundle)
     (ROOT / 'instructions.md').write_text(INSTRUCTIONS, encoding='utf-8')
     catalog = {'models': [{
         'slug': name, 'display_name': MODELS[name]['label'],
@@ -427,7 +432,7 @@ sandbox = "unelevated"
     command=sys.executable
     args=['--history-server','--history-root',str(ROOT)] if getattr(sys,'frozen',False) else \
         [str(Path(__file__).parent/'history_memory.py'),'--history-root',str(ROOT)]
-    config+='\n[mcp_servers.local_history]\ncommand = '+json.dumps(command)+'\nargs = '+json.dumps(args)+'\nstartup_timeout_sec = 20\ntool_timeout_sec = 30\n'
+    config+='\n[mcp_servers.local_history]\ncommand = '+json.dumps(command)+'\nargs = '+json.dumps(args)+'\nstartup_timeout_sec = 20\ntool_timeout_sec = 130\n'
     web_args=['--web-tools'] if getattr(sys,'frozen',False) else [str(Path(__file__).parent/'web_tools.py')]
     config+='\n[mcp_servers.web_research]\ncommand = '+json.dumps(command)+'\nargs = '+json.dumps(web_args)+'\n'
     config+='env_vars = '+json.dumps(['LOCAL_CODEX_PROXY_URL','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'])+'\n'

@@ -40,6 +40,10 @@ TOOLS = [
          'state':{'type':'string','maxLength':12000}},'required':['thread_id'],'additionalProperties':False}},
 ]
 
+from skill_memory import TOOLS as SKILL_TOOLS, call_tool as call_skill_tool
+TOOLS += SKILL_TOOLS
+
+
 def memory_instructions(thread_id=None):
     identity = f'Local history archive thread_id: {thread_id}\n' if thread_id else ''
     return identity + '''Full original history is retained outside the working context.
@@ -311,6 +315,8 @@ class HistoryMemory:
 
     def call(self,name,arguments):
         if not isinstance(arguments,dict):raise ValueError('工具参数必须为对象。')
+        if name in {tool['name'] for tool in SKILL_TOOLS}:
+            return call_skill_tool(self.root, name, arguments)
         drafts=TaskArtifacts(self.root)
         handlers={'history_search':self.search,'history_read':self.read,'history_checkpoint':self.checkpoint,
                   'draft_list':drafts.list,'draft_read':drafts.read}

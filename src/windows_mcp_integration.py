@@ -14,8 +14,9 @@ def config_fragment(root):
         return ''
     bundle = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
     source = bundle / 'skills' / 'windows-desktop-control'
-    if source.is_dir():
-        shutil.copytree(source, root / 'codex-home' / 'skills' / source.name, dirs_exist_ok=True)
+    destination = root / 'codex-home' / 'skills' / source.name
+    if source.is_dir() and not destination.exists():
+        shutil.copytree(source, destination)
     command = json.dumps(str(executable))
     args = json.dumps(['serve', '--transport', 'stdio', '--tools', ','.join(TOOLS)])
     return ('\n[mcp_servers.windows_desktop]\n'

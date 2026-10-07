@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v43')
+        self.title('我的 Codex · 本地编程工作台 · v44')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -143,7 +143,7 @@ class App(ctk.CTk):
         self.tabs = ctk.CTkTabview(main, fg_color=PANEL,
                   segmented_button_selected_color='#33482d', segmented_button_selected_hover_color='#415b38')
         self.tabs.grid(row=1, column=0, sticky='nsew')
-        for label in ['对话', '思考日志', '项目文件', '模型与性能']:
+        for label in ['对话', '思考日志', '项目文件', '模型与性能', '技能']:
             self.tabs.add(label)
         chat = self.tabs.tab('对话')
         chat.grid_columnconfigure(0, weight=1)
@@ -181,6 +181,23 @@ class App(ctk.CTk):
         self.build_files(self.tabs.tab('项目文件'))
         self.build_model(self.tabs.tab('模型与性能'))
         self.build_thought_log(self.tabs.tab('思考日志'))
+        from skill_panel import SkillPanel
+        self.skill_panel = SkillPanel(self.tabs.tab('技能'), ROOT, self.summarize_to_skill)
+        self.skill_panel.pack(fill='both', expand=True, padx=12, pady=8)
+
+    def summarize_to_skill(self):
+        if self.busy or self.loading_model:
+            messagebox.showinfo('任务正在运行', '模型可以在任务中自行保存技能；请等当前任务完成后再发起额外总结。')
+            return
+        if not self.thread_id:
+            messagebox.showinfo('暂无会话', '先完成一次有实际结果的任务，再保存经验。')
+            return
+        if self.input.get('1.0', 'end').strip():
+            messagebox.showinfo('输入框有内容', '请先发送或保存当前输入，再总结经验。')
+            return
+        self.input.insert('1.0', '把本会话中已经验证的可复用方法和工具安装路径保存为技能。先用 skill_search 查已有相关技能，读最新 revision 后合并更新；没有相关技能再新建。记录版本、必需文件、有效修复和核对结果，未完成的任务不要写成成功。不重新下载已有兼容工具；不保存原始私密日志和密钥。用 skill_save 保存后告诉我技能名称和路径。')
+        self.tabs.set('对话')
+        self.send_prompt()
 
     def build_thought_log(self, parent):
         parent.grid_columnconfigure(0, weight=1)
@@ -1515,7 +1532,8 @@ class App(ctk.CTk):
         try:
             if path.stat().st_size > 2 * 1024 * 1024:
                 raise ValueError('文件超过 2MB，请用外部编辑器打开。')
-            text = path.read_text(encoding='utf-8-sig')
+            from skill_memory import read_local_text
+            text, source_encoding = read_local_text(path)
             if '\x00' in text:
                 raise ValueError('此文件为二进制，不能作为文本编辑。')
             if self.open_path and self.editor.get('1.0', 'end-1c') != self.original:
@@ -1534,7 +1552,8 @@ class App(ctk.CTk):
         if self.busy:
             messagebox.showinfo('文件正在被使用', '请等当前任务完成后再手动保存。')
             return
-        if self.open_path.read_text(encoding='utf-8-sig') != self.original:
+        from skill_memory import read_local_text
+        if read_local_text(self.open_path)[0] != self.original:
             messagebox.showinfo('文件已更改', '磁盘文件已被其他程序修改，请重新打开后编辑。')
             return
         text = self.editor.get('1.0', 'end-1c')
