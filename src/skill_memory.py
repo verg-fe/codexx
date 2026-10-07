@@ -211,12 +211,36 @@ def local_read_text(path, offset=0, max_chars=6000):
             'total_chars': len(text), 'next_offset': offset + max_chars if offset + max_chars < len(text) else None}
 
 
+def powershell_path(root=None):
+    root = Path(root or DEFAULT_ROOT)
+    config = root / 'tools' / 'powershell' / 'current.json'
+    try:
+        candidate = Path(json.loads(config.read_text(encoding='utf-8'))['path'])
+        if candidate.is_file() and candidate.name.lower() == 'pwsh.exe':
+            return candidate
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    found = shutil.which('pwsh.exe')
+    if found:
+        return Path(found)
+    return Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32' / 'WindowsPowerShell' / 'v1.0' / 'powershell.exe'
+
+def shell_environment(env, root=None):
+    env = dict(env)
+    shell = powershell_path(root)
+    if shell.name.lower() == 'pwsh.exe':
+        env['PATH'] = str(shell.parent) + os.pathsep + env.get('PATH', '')
+    env['PYTHONUTF8'] = '1'
+    env['PYTHONIOENCODING'] = 'utf-8'
+    return env
+
+
 def local_run_utf8(command, cwd=None, timeout=60):
     if not isinstance(command, str) or not command.strip() or len(command) > 16000 or not 1 <= timeout <= 110:
         raise ValueError('命令参数无效；长任务使用原生 exec_command。')
     prefix = "$u=[System.Text.UTF8Encoding]::new($false); [Console]::InputEncoding=$u; [Console]::OutputEncoding=$u; $OutputEncoding=$u; $PSDefaultParameterValues['Get-Content:Encoding']='utf8'; $PSDefaultParameterValues['Set-Content:Encoding']='utf8'; "
     encoded = base64.b64encode((prefix + command).encode('utf-16-le')).decode('ascii')
-    shell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32' / 'WindowsPowerShell' / 'v1.0' / 'powershell.exe'
+    shell = powershell_path()
     env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'}
     process = subprocess.Popen([str(shell), '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
                                cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -241,7 +265,7 @@ def local_run_utf8(command, cwd=None, timeout=60):
                 return data.decode('utf-8', errors='replace')
     return {'exit_code': process.returncode, 'timed_out': timed_out,
             'stdout': decode(out)[:12000], 'stderr': decode(err)[:6000],
-            'truncated': len(out) > 12000 or len(err) > 6000}
+            'shell': str(shell), 'truncated': len(out) > 12000 or len(err) > 6000}
 
 
 def schema(name, description, properties, required):
@@ -286,6 +310,7 @@ observed evidence and pitfalls as a concise skill. Merge into a relevant existin
 its current revision instead of creating duplicates. Keep unresolved guesses explicitly marked.
 Use skill_read/local_read_text for Chinese skill or text files, and local_run_utf8 for short
 PowerShell text commands. Use byte-preserving Python subprocess capture for PNG/binary data.
+When asked to configure or upgrade your own environment, read self-configure-tools and carry out the setup using real tools. Preserve a rollback and verify the installed version and actual behavior before saving its resource record.
 Skills are available across sessions; their resource locations must be checked before reuse.\n'''
 
 

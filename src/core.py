@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-learning-44'
-APP_VERSION = '2026-10-08-learning-44'
+ADAPTER_VERSION = '2026-10-08-upgrade-45'
+APP_VERSION = '2026-10-08-upgrade-45'
 WORK_CONTEXT = 108800
 WORK_COMPACT = 83000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -931,6 +931,8 @@ class RpcClient:
         env['CODEX_HOME'] = str(ROOT / 'codex-home')
         env['RUST_LOG'] = 'warn'
         # Private tool children must return readable Chinese text through pipes.
+        from skill_memory import shell_environment
+        env = shell_environment(env, ROOT)
         env['PYTHONUTF8'] = '1'
         env['PYTHONIOENCODING'] = 'utf-8'
         engine = ROOT / 'engine' / 'codex.exe'
