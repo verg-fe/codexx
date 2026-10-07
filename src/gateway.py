@@ -7,6 +7,7 @@ import json
 import sqlite3
 import threading
 import socket
+import http.client
 import os
 import urllib.request
 import urllib.error
@@ -17,6 +18,9 @@ from task_artifacts import TaskArtifacts
 from core import (ROOT, api, load_settings, MODELS, selected_model, context_for, start_model,
                   active_model, runtime_context_for, OUTPUT_RESERVE, ADAPTER_VERSION, model_supports_vision)
 from core import selected_backend
+from core import reasoning_budget
+from generation_guard import GuardStore, GuardStopped, InferenceWatch, guard_options, repeated_failure
+from error_research import research_failure
 
 INFERENCE_LOCK = threading.Lock()
 
@@ -133,14 +137,22 @@ def retain_execution_state(body,memory=None):
     if not thread_id:return 0
     memory=HistoryMemory(ROOT) if memory is None else memory
     state=memory.execution_snapshot(thread_id)
+    blocked=GuardStore(ROOT).read(thread_id)
+    if blocked.get('blocked'):raise GuardStopped(blocked['reason'])
     if state['failures']:
         append_runtime_state(body,memory.execution_instructions(state))
+        repeated=repeated_failure(state,guard_options(load_settings())['repeated_failures'])
+        if repeated:
+            reason='同一异常已重复 '+str(len(repeated))+' 次，任务已暂停。请查看实际错误、官方接口资料后再继续。'
+            GuardStore(ROOT).write(thread_id,reason,'repeated_failure')
+            raise GuardStopped(reason)
+        save_generation_phase('research')
+        reference=research_failure(ROOT,state)
+        if reference:append_runtime_state(body,reference)
     return len(state['failures'])
 
 def normalize(body):
-    # -1 inherits the server's unrestricted budget. Keep caller-specified total
-    # output lengths, but never inject an 8192-token ceiling or a thinking budget.
-    body['reasoning_budget_tokens']=-1
+    body['reasoning_budget_tokens']=reasoning_budget()
     body.pop('thinking_budget_tokens',None)
     # Native Codex groups MCP tools in Responses namespaces. llama.cpp needs
     # flat names. Restore the advertised namespace/name on the return path.
@@ -326,7 +338,7 @@ def route_inference(body, route, settings, name, media_converted=0):
                 full_context=prompt_tokens is None)
     record.update(phase='ready',runtime_context=active_model().get('context'),
                   kv_cache_location=active_model().get('kv_cache_location'),
-                  backend=active_model().get('backend','vulkan'),reasoning_budget=-1)
+                  backend=active_model().get('backend','vulkan'),reasoning_budget=reasoning_budget(settings))
     save()
     print('inference routing: '+json.dumps(record),flush=True)
     return record
@@ -415,6 +427,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(401)
             return
         route=self.path.split('?')[0]
+        if self.command=='POST' and route=='/guard/reset':
+            length=int(self.headers.get('Content-Length','0'))
+            if not 0<length<2048:self.send_error(400);return
+            value=json.loads(self.rfile.read(length))
+            thread=value.get('thread_id')
+            if not isinstance(thread,str) or len(thread)>128:self.send_error(400);return
+            GuardStore(ROOT).reset(thread)
+            result=b'{"ok":true}'
+            self.send_response(200);self.send_header('Content-Type','application/json')
+            self.send_header('Content-Length',str(len(result)));self.end_headers();self.wfile.write(result)
+            return
         if self.command == 'GET' and route in ('/health','/v1/models'):
             data={'status':'ok','adapter_version':ADAPTER_VERSION} if route=='/health' else {
                 'object':'list', 'data':[{'id':name,'object':'model','owned_by':'local','created':0} for name in MODELS]}
@@ -433,6 +456,10 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.rfile.read(length) if length else None
         custom_names = set()
         tool_routes = {}
+        watch=None
+        options=guard_options(load_settings())
+        inference=payload is not None and route in ('/v1/responses','/v1/chat/completions','/completion')
+        thread_id=None
         if payload is not None and self.path.split('?')[0] in ('/v1/responses', '/v1/chat/completions', '/completion'):
             try:
                 body = json.loads(payload)
@@ -453,8 +480,14 @@ class Handler(BaseHTTPRequestHandler):
                         print('Execution evidence unavailable: '+type(error).__name__,flush=True)
                     task_state=attach_task_state(body)
                 else:
-                    body['reasoning_budget_tokens']=-1
+                    body['reasoning_budget_tokens']=reasoning_budget(settings)
                     body.pop('thinking_budget_tokens',None)
+                options=guard_options(settings)
+                budget_field='max_output_tokens' if route=='/v1/responses' else 'max_tokens' if route=='/v1/chat/completions' else 'n_predict'
+                requested=body.get(budget_field)
+                body[budget_field]=min(requested,options['output_tokens']) if isinstance(requested,int) and requested>0 else options['output_tokens']
+                thread_id=archive_thread_id(body.get('instructions'))
+                advertised={t['name']:t for t in body.get('tools',[]) if isinstance(t,dict) and t.get('name')}
                 media_converted=normalize_media(body)
                 routing = route_inference(body,route,settings,name,media_converted)
                 if selected_backend(settings)=='moe4all':
@@ -467,7 +500,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
                 streaming = bool(body.get('stream'))
                 del body
-            except (ValueError, TypeError) as error:
+            except (ValueError, TypeError, GuardStopped) as error:
                 result=json.dumps({'error':{'code':400,'type':'invalid_request_error',
                     'message':str(error) or '请求格式不正确。'}},ensure_ascii=False).encode('utf-8')
                 self.send_response(400)
@@ -488,16 +521,24 @@ class Handler(BaseHTTPRequestHandler):
                     except (OSError,ValueError,RuntimeError,sqlite3.Error) as error:
                         print('History trace link unavailable: '+type(error).__name__,flush=True)
                 save_generation_phase('waiting', trace_name=self.trace.path.name if self.trace.path else None)
-        req = urllib.request.Request('http://127.0.0.1:8080'+self.path, data=payload,
-              method=self.command, headers={'Authorization':expected, 'Content-Type':'application/json',
-                                           'Accept-Encoding':'identity'})
+        upstream=http.client.HTTPConnection('127.0.0.1',8080,timeout=options['prefill_seconds']+options['generation_seconds'])
+        if inference:
+            watch=InferenceWatch(ROOT,thread_id,options,upstream,self.connection,active_model().get('pid'))
+            watch.start()
         try:
-            response = urllib.request.urlopen(req, timeout=64800)
-        except urllib.error.HTTPError as e:
-            response = e
-        except OSError as e:
+            upstream.request(self.command,self.path,body=payload,
+                headers={'Authorization':expected,'Content-Type':'application/json','Accept-Encoding':'identity'})
+            response=upstream.getresponse()
+            if watch:watch.remember_socket(response)
+        except (OSError,http.client.HTTPException) as e:
+            if watch:watch.finish()
+            else:upstream.close()
             self.trace_outcome = 'upstream_connection_error'
-            self.send_error(502, str(e).encode('ascii','replace').decode())
+            if watch and watch.stopped.is_set():
+                result=json.dumps({'error':{'type':'invalid_request_error','message':watch.reason}},ensure_ascii=False).encode('utf-8')
+                self.send_response(400);self.send_header('Content-Type','application/json; charset=utf-8')
+                self.send_header('Content-Length',str(len(result)));self.end_headers();self.wfile.write(result)
+            else:self.send_error(502,str(e).encode('ascii','replace').decode())
             return
         try:
             with response:
@@ -521,6 +562,20 @@ class Handler(BaseHTTPRequestHandler):
                         if data_lines and data_lines[0] != b'[DONE]':
                             data = json.loads(b'\n'.join(data_lines))
                             original_type = data.get('type')
+                            if watch:
+                                watch.event(data)
+                                if original_type=='response.output_item.done':
+                                    item=data.get('item') or {}
+                                    if item.get('type')=='function_call':
+                                        tool=advertised.get(item.get('name'))
+                                        try:
+                                            arguments=json.loads(item.get('arguments','{}'))
+                                            required=(tool or {}).get('parameters',{}).get('required',[])
+                                            valid=tool is not None and isinstance(arguments,dict) and all(k in arguments for k in required)
+                                        except ValueError:valid=False
+                                        if not valid:
+                                            watch.stop('模型生成了未知工具或不完整参数，已停止本轮；未执行此调用。')
+                                            raise GuardStopped(watch.reason)
                             if self.trace is not None:
                                 self.trace.event(data)
                             if original_type == 'response.output_item.added':
@@ -549,11 +604,26 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     while block := response.read1(65536):
                         write_chunk(block)
+                if watch and watch.stopped.is_set():raise GuardStopped(watch.reason)
                 self.wfile.write(b'0\r\n\r\n')
                 self.wfile.flush()
                 self.trace_outcome = 'upstream_eof' if response.status == 200 else 'upstream_http_error'
         except (BrokenPipeError, ConnectionResetError):
             self.trace_outcome = 'client_disconnected'
+            if watch:watch.stop('客户端已断开，后台推理已取消。',notify=False)
+        except (GuardStopped,OSError,http.client.HTTPException) as error:
+            self.trace_outcome='guard_stopped' if watch and watch.stopped.is_set() else 'upstream_stream_error'
+            if watch and not watch.stopped.is_set():watch.stop('模型流意外中断，已停止本轮并保留日志。')
+            if watch:
+                event=watch.failed_event()
+                if self.trace:self.trace.adapter_terminal(event)
+                try:
+                    if route=='/v1/responses':write_chunk(('event: response.failed\ndata: '+json.dumps(event,ensure_ascii=False)+'\n\n').encode('utf-8'))
+                    self.wfile.write(b'0\r\n\r\n');self.wfile.flush()
+                except OSError:pass
+        finally:
+            if watch:watch.finish()
+            else:upstream.close()
 
 class LocalServer(ThreadingHTTPServer):
     allow_reuse_address = False

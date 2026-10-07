@@ -26,6 +26,9 @@ from core import (ROOT, MODEL, MODELS, BACKENDS, HISTORY_MODES, PERFORMANCE_MODE
                   context_limits, context_for, compact_for, active_model, kv_cache_location, GPU_CONTEXT_LIMIT,
                   runtime_matches_settings, engine_config, engine_limits, memory_instructions)
 from core import refresh_gateway_for_current_app
+from core import gateway_api
+from generation_guard import GuardStore, guard_options
+from session_workspaces import SessionWorkspaces
 
 ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('blue')
@@ -40,12 +43,15 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v36')
+        self.title('我的 Codex · 本地编程工作台 · v37')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
         self.settings = prepare()
-        self.project = Path(self.settings['project'])
+        self.workspace_store=SessionWorkspaces(ROOT)
+        self.session_workspace=self.workspace_store.create(self.settings)
+        self.project = Path(self.session_workspace['project'])
+        self.guard_seen=None
         self.events = queue.Queue()
         self.rpc = None
         self.thread_id = None
@@ -80,6 +86,7 @@ class App(ctk.CTk):
         self.protocol('WM_DELETE_WINDOW', self.close_app)
         self.after(60, self.poll_events)
         self.after(500, self.refresh_status)
+        self.after(250,self.poll_generation_guard)
         if '--resume-after-update' in sys.argv:self.after(800,self.restore_after_update)
         self.auto_launch_model = not smoke and '--no-auto-model' not in sys.argv
         if not smoke:
@@ -101,6 +108,7 @@ class App(ctk.CTk):
         self.button(side, '+  新对话', self.new_chat, fg_color=ACCENT,
                     text_color=BG).pack(fill='x', padx=18, pady=(0, 8))
         self.button(side, '打开项目文件夹', self.choose_project).pack(fill='x', padx=18, pady=4)
+        self.button(side, '会话文件夹位置', self.choose_workspace_root).pack(fill='x', padx=18, pady=4)
         self.draft_button=self.button(side, '打开本轮文件与草稿', self.open_task_files)
         self.draft_button.pack(fill='x', padx=18, pady=4)
         self.project_label = ctk.CTkLabel(side, text=str(self.project), wraplength=190,
@@ -145,7 +153,7 @@ class App(ctk.CTk):
         self.chat.grid(row=0, column=0, sticky='nsew', padx=14, pady=14)
         self.chat._textbox.configure(undo=False)
         self.chat.configure(state='disabled')
-        self.append('◈  你的电脑，你的编程助手\n\n描述你想完成的工作。我可以读取项目、修改代码、运行检查，并保存会话。\n\n选择左侧项目文件夹，然后开始。\n', save=False)
+        self.append('◈ 新对话\n本会话文件夹：'+str(self.project)+'\n\n直接描述你想完成的工作；需要修改已有项目时，点击左侧“打开项目文件夹”。\n', save=False)
         composer = ctk.CTkFrame(chat, fg_color='#222831', corner_radius=12)
         composer.grid(row=1, column=0, sticky='ew', padx=14, pady=(0, 14))
         composer.grid_columnconfigure(0, weight=1)
@@ -287,6 +295,17 @@ class App(ctk.CTk):
         scroll.pack(fill='both', expand=True)
         parent = scroll
         parent.grid_columnconfigure(0, weight=1)
+        guards=ctk.CTkFrame(parent,fg_color='#222831')
+        guards.grid(row=9,column=0,sticky='ew',padx=28,pady=12)
+        ctk.CTkLabel(guards,text='防止思考和报错循环',font=('Microsoft YaHei UI',18,'bold')).pack(anchor='w',padx=18,pady=(14,5))
+        self.guard_picker=ctk.CTkOptionMenu(guards,values=['标准：思考 60 秒 · 单次生成 150 秒','严格：思考 30 秒 · 单次生成 90 秒','宽松：思考 120 秒 · 单次生成 300 秒'],
+            command=self.change_guard_limits,width=420,fg_color='#303742',button_color='#415b38')
+        self.guard_picker.pack(anchor='w',padx=18,pady=8)
+        seconds=guard_options(self.settings)['reasoning_seconds']
+        self.guard_picker.set('严格：思考 30 秒 · 单次生成 90 秒' if seconds<=30 else
+            '宽松：思考 120 秒 · 单次生成 300 秒' if seconds>60 else '标准：思考 60 秒 · 单次生成 150 秒')
+        ctk.CTkLabel(guards,text='同一异常重复 3 次暂停；单任务最多 10 分钟。异常会保留日志并取消后台推理。\nAPI 报错后查证接口；未知工具、残缺参数和伪工具标记会被拦截。',
+            text_color=MUTED,justify='left',wraplength=800).pack(anchor='w',padx=18,pady=(4,14))
         ctk.CTkLabel(parent, text='为这台电脑配置的模型', font=('Microsoft YaHei UI', 23, 'bold')).grid(row=0, column=0, sticky='w', padx=28, pady=(25, 8))
         self.model_title = ctk.CTkLabel(parent, text=selected_model(self.settings)+'  ·  '+BACKENDS[selected_backend(self.settings)]['label'],
                      text_color=ACCENT, font=('Segoe UI', 15))
@@ -880,12 +899,17 @@ class App(ctk.CTk):
                          'modelProvider': 'qwen_local', 'sandbox': 'danger-full-access',
                          'approvalPolicy': 'never','config':engine_config(self.settings)})
                 self.thread_id = result['thread']['id']
+                if self.session_workspace:
+                    self.session_workspace['thread_id']=self.thread_id
+                    self.workspace_store.save(self.session_workspace)
                 self.events.put({'local': 'new_thread', 'title': prompt[:30], 'project': project,
-                                 'threadId': self.thread_id})
+                                 'threadId': self.thread_id,'workspace':self.session_workspace})
+            gateway_api('/guard/reset',{'thread_id':self.thread_id})
             self.artifact_locks.close()
             self.artifact_task,self.artifact_locks=TaskArtifacts(ROOT).begin(self.thread_id,project,prompt,images)
             self.events.put({'local':'task_artifacts','state':self.artifact_task})
             task_instructions=memory_instructions(self.thread_id)+TaskArtifacts(ROOT).instructions(self.thread_id)
+            task_instructions+=self.workspace_store.instructions(self.session_workspace)
             result = self.rpc.request('turn/start', {'threadId': self.thread_id,
                      'cwd':self.artifact_task['workdir'],
                      'model': selected_model(self.settings),
@@ -944,6 +968,30 @@ class App(ctk.CTk):
         if self.rpc and self.thread_id and self.turn_id and self.busy:
             self.background(lambda: self.rpc.request('turn/interrupt',
                    {'threadId': self.thread_id, 'turnId': self.turn_id}))
+
+    def poll_generation_guard(self):
+        if self.busy and self.thread_id:
+            state=GuardStore(ROOT).read(self.thread_id)
+            elapsed=time.monotonic()-self.turn_started_at if self.turn_started_at else 0
+            if not state.get('blocked') and elapsed>guard_options(self.settings)['turn_seconds']:
+                state=GuardStore(ROOT).write(self.thread_id,'本次任务超过 10 分钟，已暂停并保留进度；请查看结果后继续。','turn_timeout')
+            if state.get('blocked') and state.get('id')!=self.guard_seen and self.turn_id:
+                self.guard_seen=state['id']
+                self.append('\n⚠ 已暂停：'+state['reason']+'\n',save=True)
+                self.interrupt()
+        self.after(250,self.poll_generation_guard)
+
+    def change_guard_limits(self,value):
+        if self.busy:
+            self.append('\n› 当前任务结束后再修改防循环限制。\n',save=False)
+            current=guard_options(self.settings)['reasoning_seconds']
+            self.guard_picker.set('严格：思考 30 秒 · 单次生成 90 秒' if current<=30 else
+                '宽松：思考 120 秒 · 单次生成 300 秒' if current>60 else '标准：思考 60 秒 · 单次生成 150 秒')
+            return
+        reasoning,generation=(30,90) if value.startswith('严格') else (120,300) if value.startswith('宽松') else (60,150)
+        options=guard_options(self.settings);options.update(reasoning_seconds=reasoning,generation_seconds=generation)
+        self.settings['generation_guard']=options;save_settings(self.settings)
+        self.append('\n› 已保存限制：思考 '+str(reasoning)+' 秒，单次生成 '+str(generation)+' 秒。\n',save=False)
 
     def poll_events(self):
         try:
@@ -1041,7 +1089,7 @@ class App(ctk.CTk):
                 self.append('\n⚠ '+event['text']+'\n',save=False)
         elif local == 'new_thread':
             self.sessions.insert(0, {'id': event['threadId'], 'title': event['title'],
-                                   'project': event['project']})
+                                   'project': event['project'],'workspace':event.get('workspace')})
             self.persist_sessions()
             self.render_sessions()
         elif local == 'resumed':
@@ -1246,13 +1294,19 @@ class App(ctk.CTk):
             return
         path = filedialog.askdirectory(initialdir=str(self.project), title='选择你的项目')
         if path:
-            self.project = Path(path)
             self.settings['project'] = path
             from core import save_settings
             save_settings(self.settings)
-            self.project_label.configure(text=path)
-            self.new_chat()
+            self.new_chat(project_override=path)
             self.refresh_files()
+
+    def choose_workspace_root(self):
+        if self.busy:return
+        path=filedialog.askdirectory(initialdir=self.settings['session_workspace_root'],title='选择新会话文件夹的保存位置')
+        if path:
+            self.settings['session_workspace_root']=str(Path(path).resolve())
+            save_settings(self.settings)
+            self.append('\n› 后续新会话文件夹将保存在：'+self.settings['session_workspace_root']+'\n',save=False)
 
     def attach_image(self):
         if not model_supports_vision(selected_model(self.settings)):
@@ -1262,11 +1316,22 @@ class App(ctk.CTk):
         self.attachments.extend(paths)
         self.attach_button.configure(text=f'{len(self.attachments)} 张图片' if self.attachments else '添加图片')
 
-    def new_chat(self):
+    def new_chat(self,project_override=None):
         if self.busy or self.steer_pending or self.session_action_pending:
+            return
+        try:workspace=self.workspace_store.create(self.settings)
+        except OSError as error:
+            self.append('\n⚠ 无法创建会话文件夹：'+str(error)+'\n',save=False)
             return
         self.save_transcript()
         self.detach_thread()
+        self.session_workspace=workspace
+        if project_override:
+            self.session_workspace['project']=str(Path(project_override).resolve())
+            self.workspace_store.save(self.session_workspace)
+        self.project=Path(self.session_workspace['project'])
+        self.project_label.configure(text=str(self.project))
+        self.guard_seen=None
         self.thread_id = None
         self.turn_id = None
         self.current_item = None
@@ -1275,7 +1340,10 @@ class App(ctk.CTk):
         self.chat.configure(state='normal')
         self.chat.delete('1.0', 'end')
         self.chat.configure(state='disabled')
-        self.append('◈ 新对话\n当前项目：' + str(self.project) + '\n', save=False)
+        self.attachments.clear();self.attach_button.configure(text='添加图片')
+        self.input.delete('1.0','end')
+        self.append('◈ 新对话\n本会话文件夹：'+self.session_workspace['workspace']+'\n当前项目：' + str(self.project) + '\n', save=False)
+        self.refresh_files()
         self.tabs.set('对话')
 
     def detach_thread(self):
@@ -1379,6 +1447,8 @@ class App(ctk.CTk):
         if session['id'] != self.thread_id:
             self.detach_thread()
         self.project = Path(session['project'])
+        self.session_workspace=session.get('workspace')
+        self.guard_seen=None
         self.project_label.configure(text=str(self.project))
         self.thread_id = session['id']
         path = ROOT / 'conversations' / (session['id'] + '.txt')
