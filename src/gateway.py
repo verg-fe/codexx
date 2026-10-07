@@ -456,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.rfile.read(length) if length else None
         custom_names = set()
         tool_routes = {}
+        advertised={}
+        tool_execution_enabled=False
         watch=None
         options=guard_options(load_settings())
         inference=payload is not None and route in ('/v1/responses','/v1/chat/completions','/completion')
@@ -492,6 +494,8 @@ class Handler(BaseHTTPRequestHandler):
                     # Do not let an engine's old model default silently shrink it.
                     body[budget_field]=options['output_tokens']
                 advertised={t['name']:t for t in body.get('tools',[]) if isinstance(t,dict) and t.get('name')}
+                choice=body.get('tool_choice')
+                tool_execution_enabled=bool(advertised) and choice!='none' and not (isinstance(choice,dict) and choice.get('type')=='none')
                 media_converted=normalize_media(body)
                 routing = route_inference(body,route,settings,name,media_converted)
                 if selected_backend(settings)=='moe4all':
@@ -527,7 +531,7 @@ class Handler(BaseHTTPRequestHandler):
                 save_generation_phase('waiting', trace_name=self.trace.path.name if self.trace.path else None)
         upstream=http.client.HTTPConnection('127.0.0.1',8080,timeout=options['prefill_seconds']+options['generation_seconds'])
         if inference:
-            watch=InferenceWatch(ROOT,thread_id,options,upstream,self.connection,active_model().get('pid'))
+            watch=InferenceWatch(ROOT,thread_id,options,upstream,self.connection,active_model().get('pid'),tool_enabled=tool_execution_enabled)
             watch.start()
         try:
             upstream.request(self.command,self.path,body=payload,
@@ -566,6 +570,8 @@ class Handler(BaseHTTPRequestHandler):
                         if data_lines and data_lines[0] != b'[DONE]':
                             data = json.loads(b'\n'.join(data_lines))
                             original_type = data.get('type')
+                            if self.trace is not None:
+                                self.trace.event(data)
                             if watch:
                                 watch.event(data)
                                 if original_type=='response.output_item.done':
@@ -580,8 +586,6 @@ class Handler(BaseHTTPRequestHandler):
                                         if not valid:
                                             watch.stop('模型生成了未知工具或不完整参数，已停止本轮；未执行此调用。')
                                             raise GuardStopped(watch.reason)
-                            if self.trace is not None:
-                                self.trace.event(data)
                             if original_type == 'response.output_item.added':
                                 item = data.get('item') or {}
                                 save_generation_phase(item.get('type'), item.get('name'), self.trace.path.name if self.trace and self.trace.path else None)

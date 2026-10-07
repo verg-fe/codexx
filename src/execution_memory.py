@@ -5,10 +5,11 @@ import re
 
 LINE_BYTES=1024*1024
 MAX_PENDING=128
-CLASSIFIER_VERSION=3
+CLASSIFIER_VERSION=4
 SEMANTIC_ERROR=re.compile(
     r'^\s*(?:The property [^\n]+ cannot be found on this object\.|'
     r'Traceback \(most recent call last\):|ParserError\s*:|'
+    r"(?i:The term [^\n]+ is not recognized as (?:a name|the name) of a cmdlet)|"
     r'(?:exec_command|apply_patch) failed:|'
     r'\+?\s*FullyQualifiedErrorId\s*:.*(?:Exception|Error)|'
     r'\w+(?:\.\w+)*(?:Exception|Error):\s*\S)',re.M)
@@ -22,8 +23,10 @@ def result_status(output):
     if isinstance(packet,dict) and isinstance(packet.get('isError'),bool):
         if packet['isError']:return 'failed',text
         inspection='\n'.join(row.get('text','') for row in packet.get('content',[]) if isinstance(row,dict)) or text
+    elif isinstance(packet,dict) and isinstance(packet.get('output'),str):inspection=packet['output']
     else:inspection=text
     inspection=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',inspection)
+    if re.search(r"The term [^\n]+ is not recognized as (?:a name|the name) of a cmdlet",inspection,re.I):return 'failed',text
     # Runtime probes sometimes prepend their own label before the actual error.
     if re.search(r'^.*(?:FAIL|failed)\s*:\s*[\w.]+(?:Error|Exception):',inspection,re.M|re.I):return 'failed',text
     # PowerShell's non-terminating exceptions can leave a zero process exit code.
@@ -109,7 +112,7 @@ class ExecutionJournal:
                         if not call:continue
                         status,text=result_status(value.get('output',''))
                         if status=='unknown':continue
-                        marker=SEMANTIC_ERROR.search(text)
+                        marker=SEMANTIC_ERROR.search(text) or re.search(r'The term [^\n]+ is not recognized as (?:a name|the name) of a cmdlet',text,re.I)
                         detail=(text[marker.start():marker.start()+500] if marker else '\n'.join(text.strip().splitlines()[-6:])[-500:])
                         db.execute('INSERT OR IGNORE INTO execution_results(thread_id,record_id,call_record_id,turn_id,call_id,'
                             'action_hash,name,command,status,detail,timestamp,source,line) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',

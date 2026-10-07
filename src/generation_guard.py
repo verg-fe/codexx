@@ -81,10 +81,18 @@ class GuardStore:
 
 class GuardStopped(RuntimeError):pass
 
+def unexecuted_tool_markup(text):
+    """Recognize bare actionable markup, preserving quoted documentation."""
+    text=re.sub(r'(?ms)^\s*(`{3,}|~{3,})[^\n]*\n.*?^\s*\1\s*$', '', text)
+    text=re.sub(r'`[^`\n]*`','',text)
+    text='\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('>'))
+    return bool(re.search(r'(?m)^\s*(?:<tool_call>\s*(?:\{|<function=[^>]+>)|<function=[^>]+>)',text))
+
 class InferenceWatch:
-    def __init__(self, root, thread, options, connection, downstream, model_pid=None):
+    def __init__(self, root, thread, options, connection, downstream, model_pid=None, tool_enabled=False):
         self.root=Path(root);self.thread=thread;self.options=options
         self.connection=connection;self.downstream=downstream;self.model_pid=model_pid
+        self.tool_enabled=tool_enabled
         self.done=threading.Event();self.stopped=threading.Event();self.lock=threading.Lock()
         self.sockets=[];self.reason=None;self.started=time.monotonic()
         self.generated=None;self.reasoning=None;self.response_id=None;self.text=''
@@ -178,9 +186,10 @@ class InferenceWatch:
                         self.phrases[key]+=1
                         if self.phrases[key]>=3:self.stop('检测到相同思考段落反复输出，已停止循环。')
             else:self.reasoning=None
-        if kind=='response.output_text.delta':
-            self.text=(self.text+event.get('delta',''))[-2048:]
-            if '<tool_call>' in self.text or re.search(r'<function=[^>]+>',self.text):
+        if self.tool_enabled and kind=='response.output_item.done':
+            item=event.get('item') or {}
+            text='\n'.join(block.get('text','') for block in item.get('content',[]) if isinstance(block,dict))
+            if item.get('type')=='message' and unexecuted_tool_markup(text):
                 self.stop('模型输出了未执行的工具标记，已停止本轮；请使用原生工具调用。')
         if self.stopped.is_set():raise GuardStopped(self.reason)
 

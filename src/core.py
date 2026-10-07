@@ -55,8 +55,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-07-deep-thinking-38'
-APP_VERSION = '2026-10-07-qwen-deep-thinking-38'
+ADAPTER_VERSION = '2026-10-07-compaction-quoting-fix-39'
+APP_VERSION = '2026-10-07-debug-compaction-39'
 WORK_CONTEXT = 97280
 WORK_COMPACT = 83968
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -90,6 +90,11 @@ inspect its output. Set UTF-8 console and pipeline output when reading Chinese t
 For .NET Process events in PowerShell use add_OutputDataReceived/add_ErrorDataReceived methods,
 not assigning or using += on event names. Prefer a small Python subprocess helper for capture.
 Use Windows PowerShell correctly. Do not overwrite environment HOME, CODEX_HOME or system variables.
+PowerShell does not use backslash to escape quotes. Bash single-quote escape fragments do not
+quote PowerShell strings. For adb or other nested shells, prefer Python subprocess.run argument
+lists. Read Android maps and filter in Python instead of nesting grep/awk through Windows.
+Stop on command-not-found errors even with exit code zero. Never infer Android/ART state from
+a command that failed in Windows. Never reuse made-up write_stdin session IDs.
 Do not execute destructive operations without explicit user authorization. Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
 
@@ -867,7 +872,7 @@ def refresh_gateway_for_current_app():
         raise RuntimeError('本地接口状态刚发生变化，请重新打开工作台。')
     os.kill(int(old['ProcessId']),signal.SIGTERM)
     logs=ROOT/'logs'
-    with (logs/'gateway38.log').open('a',encoding='utf-8') as stream:
+    with (logs/'gateway39.log').open('a',encoding='utf-8') as stream:
         process=subprocess.Popen([sys.executable,'--gateway'],stdin=subprocess.DEVNULL,
             stdout=stream,stderr=stream,creationflags=NO_WINDOW)
     deadline=time.monotonic()+15
@@ -881,7 +886,7 @@ def refresh_gateway_for_current_app():
                     if json.load(response).get('adapter_version')==ADAPTER_VERSION:return
             except (OSError,ValueError):pass
             time.sleep(.2)
-        raise RuntimeError('新版本地接口未能启动，请查看 gateway38.log。')
+        raise RuntimeError('新版本地接口未能启动，请查看 gateway39.log。')
     except Exception:
         if process.poll() is None:
             process.terminate();process.wait(timeout=5)

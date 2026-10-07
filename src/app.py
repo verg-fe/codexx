@@ -43,7 +43,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v38')
+        self.title('我的 Codex · 本地编程工作台 · v39')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -1203,9 +1203,9 @@ class App(ctk.CTk):
         text = re.sub(r'<('+tags+r')\b[^>]*>.*?</\1>', '', text, flags=re.S|re.I)
         text = re.sub(r'<('+tags+r')\b[^>]*>.*$', '', text, flags=re.S|re.I)
         text = re.sub(r'^\s*FINAL ANSWER\s*:\s*', '', text, flags=re.I)
-        text = re.sub(r'<tool_call>.*?(?:</tool_call>|$)',
-            '\n⚠ 模型将工具调用写成了文本，这项操作尚未执行。可以重新引导它使用实际工具。\n',
-            text,flags=re.S|re.I)
+        from generation_guard import unexecuted_tool_markup
+        if unexecuted_tool_markup(text):
+            text+='\n⚠ 上述工具标记是文字，未实际执行。\n'
         return text.lstrip()
 
     def user_questions(self, event):
