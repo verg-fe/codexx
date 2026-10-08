@@ -109,11 +109,11 @@ class InferenceWatch:
         try:self.sockets.append(response.fp.raw._sock)
         except AttributeError:pass
 
-    def stop(self, reason, notify=True):
+    def stop(self, reason, notify=True, code='generation_guard'):
         with self.lock:
             if self.stopped.is_set():return
-            self.reason=reason;self.stopped.set()
-            if notify:GuardStore(self.root).write(self.thread,reason)
+            self.reason=reason;self.error_code=code;self.stopped.set()
+            if notify:GuardStore(self.root).write(self.thread,reason,code=code)
             sockets=self.sockets+[self.connection.sock]
             for stream in sockets:
                 if stream is not None:
@@ -192,4 +192,4 @@ class InferenceWatch:
     def failed_event(self):
         return {'type':'response.failed','response':{'id':self.response_id or 'resp_guard_'+uuid.uuid4().hex,
             'object':'response','created_at':int(time.time()),'status':'failed','output':[],
-            'error':{'code':'generation_guard','message':self.reason or '本轮已停止。'}}}
+            'error':{'code':getattr(self,'error_code','generation_guard'),'message':self.reason or '本轮已停止。'}}}

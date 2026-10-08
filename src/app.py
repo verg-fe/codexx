@@ -29,6 +29,7 @@ from core import refresh_gateway_for_current_app
 from core import gateway_api
 from generation_guard import GuardStore, guard_options, GUARD_PROFILES, profile_label
 from session_workspaces import SessionWorkspaces
+from tool_call_recovery import RECOVERABLE_CODES, RecoveryBudget, recovery_prompt
 
 ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('blue')
@@ -43,7 +44,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v50')
+        self.title('我的 Codex · 本地编程工作台 · v51')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -51,6 +52,7 @@ class App(ctk.CTk):
         self.workspace_store=SessionWorkspaces(ROOT)
         self.session_workspace=self.workspace_store.create(self.settings)
         self.project = Path(self.session_workspace['project'])
+        self.tool_recovery=RecoveryBudget()
         self.guard_seen=None
         self.events = queue.Queue()
         self.rpc = None
@@ -895,6 +897,7 @@ class App(ctk.CTk):
             self.launch_model()
             self.append('\n◈  模型正在加载，准备完成后请再次发送。\n', save=False)
             return
+        self.tool_recovery.cancel(reset=True)
         self.input.delete('1.0', 'end')
         self.append('\n\n你\n' + prompt + '\n\nCodex\n')
         self.busy = True
@@ -935,6 +938,35 @@ class App(ctk.CTk):
                      'input': [{'type': 'text', 'text': prompt}] +
                               [{'type': 'localImage', 'path': path} for path in images], 'effort': effort})
             self.turn_id = result['turn']['id']
+        self.background(work)
+
+    def schedule_tool_recovery(self):
+        thread=self.thread_id
+        state=GuardStore(ROOT).read(thread)
+        plan=self.tool_recovery.plan(thread,state)
+        if plan is None:return
+        ticket,attempt=plan
+        self.append(f'\n› 工具调用未执行，将拆分步骤重试（{attempt}/2）。\n',save=True)
+        self.after(1000,lambda:self.retry_invalid_tool(thread,state,ticket))
+
+    def retry_invalid_tool(self,thread,state,ticket):
+        if (ticket!=self.tool_recovery.ticket or thread!=self.thread_id or self.busy or
+                self.turn_id or not self.rpc or self.input.get('1.0','end').strip()):return
+        self.busy=True;self.turn_visible_output=False;self.turn_started_at=time.monotonic()
+        self.current_item=None;self.message_buffers.clear();self.sync_send_button()
+        prompt=recovery_prompt(state)
+        project=(self.artifact_task or {}).get('workdir') or str(self.project)
+        effort={'均衡思考':'medium','深入思考':'xhigh','快速思考':'low'}[self.effort.get()]
+        instructions=memory_instructions(thread)+TaskArtifacts(ROOT).instructions(thread)
+        instructions+=self.workspace_store.instructions(self.session_workspace)
+        def work():
+            gateway_api('/guard/reset',{'thread_id':thread})
+            result=self.rpc.request('turn/start',{'threadId':thread,'cwd':project,
+                'model':selected_model(self.settings), 'effort':effort,
+                'collaborationMode':{'mode':'default','settings':{'model':selected_model(self.settings),
+                    'reasoning_effort':effort,'developer_instructions':instructions}},
+                'input':[{'type':'text','text':prompt}]})
+            self.turn_id=result['turn']['id']
         self.background(work)
 
     def sync_send_button(self):
@@ -982,6 +1014,7 @@ class App(ctk.CTk):
             TaskArtifacts(ROOT).finish(self.thread_id)
 
     def interrupt(self):
+        self.tool_recovery.cancel()
         if self.rpc and self.thread_id and self.turn_id and self.busy:
             self.background(lambda: self.rpc.request('turn/interrupt',
                    {'threadId': self.thread_id, 'turnId': self.turn_id}))
@@ -999,7 +1032,7 @@ class App(ctk.CTk):
         self.set_task_awake(self.busy or self.loading_model)
         if self.busy and self.thread_id:
             state=GuardStore(ROOT).read(self.thread_id)
-            if state.get('blocked') and state.get('id')!=self.guard_seen and self.turn_id:
+            if state.get('blocked') and state.get('id')!=self.guard_seen and self.turn_id and state.get('code') not in RECOVERABLE_CODES:
                 self.guard_seen=state['id']
                 self.append('\n⚠ 已暂停：'+state['reason']+'\n',save=True)
                 self.interrupt()
@@ -1166,6 +1199,7 @@ class App(ctk.CTk):
             self.turn_started_at=None
             self.save_transcript()
             self.refresh_files()
+            self.schedule_tool_recovery()
         elif method == 'item/started':
             item = params.get('item', {})
             kind = item.get('type')
@@ -1347,6 +1381,7 @@ class App(ctk.CTk):
     def new_chat(self,project_override=None):
         if self.busy or self.steer_pending or self.session_action_pending:
             return
+        self.tool_recovery.cancel()
         try:workspace=self.workspace_store.create(self.settings)
         except OSError as error:
             self.append('\n⚠ 无法创建会话文件夹：'+str(error)+'\n',save=False)
@@ -1471,6 +1506,7 @@ class App(ctk.CTk):
     def resume_session(self, session, continue_text=None):
         if self.busy or self.steer_pending or self.session_action_pending or not self.rpc:
             return
+        self.tool_recovery.cancel()
         self.save_transcript()
         if session['id'] != self.thread_id:
             self.detach_thread()

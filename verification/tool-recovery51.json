@@ -1,0 +1,21 @@
+{
+  "version": 51,
+  "context": 93000,
+  "compact": 87000,
+  "kv_cache_type": "q4_0",
+  "vision_gpu_offload": false,
+  "total_output_tokens": 20480,
+  "max_automatic_retries": 2,
+  "observed_fault": "Output reached 20480 tokens during a 31745-character tool argument; JSON unterminated; tool not executed.",
+  "checks": [
+    "actual malformed argument replay",
+    "valid/unknown/missing classification",
+    "bounded retries and deduplication",
+    "manual stop cancellation",
+    "same workdir and thread",
+    "typed user input preserved",
+    "93k output/headroom fitting"
+  ],
+  "live_check": "v51 executable and authenticated loopback health confirmed; current task remains paused.",
+  "learner_task_completed": false
+}

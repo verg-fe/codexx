@@ -22,6 +22,8 @@ from core import reasoning_budget
 from generation_guard import GuardStore, GuardStopped, InferenceWatch, guard_options, repeated_failure
 from error_research import research_failure
 
+from tool_call_recovery import diagnose_call, BATCH_GUIDANCE
+
 INFERENCE_LOCK = threading.Lock()
 
 def append_runtime_state(body, text):
@@ -310,7 +312,7 @@ def request_output_reserve(body):
     return OUTPUT_RESERVE
 
 def fit_generation_to_window(body,route,context,prompt_tokens):
-    if context!=100000 or prompt_tokens is None:return {}
+    if prompt_tokens is None:return {}
     field='max_output_tokens' if route=='/v1/responses' else 'max_tokens' if route=='/v1/chat/completions' else 'n_predict'
     remaining=max(1,context-int(prompt_tokens)-256)
     budget=min(int(body[field]),remaining)
@@ -508,6 +510,8 @@ class Handler(BaseHTTPRequestHandler):
                 advertised={t['name']:t for t in body.get('tools',[]) if isinstance(t,dict) and t.get('name')}
                 choice=body.get('tool_choice')
                 tool_execution_enabled=bool(advertised) and choice!='none' and not (isinstance(choice,dict) and choice.get('type')=='none')
+                if tool_execution_enabled and route=='/v1/responses':
+                    append_runtime_state(body,BATCH_GUIDANCE)
                 media_converted=normalize_media(body)
                 routing = route_inference(body,route,settings,name,media_converted)
                 if selected_backend(settings)=='moe4all':
@@ -589,14 +593,10 @@ class Handler(BaseHTTPRequestHandler):
                                 if original_type=='response.output_item.done':
                                     item=data.get('item') or {}
                                     if item.get('type')=='function_call':
-                                        tool=advertised.get(item.get('name'))
-                                        try:
-                                            arguments=json.loads(item.get('arguments','{}'))
-                                            required=(tool or {}).get('parameters',{}).get('required',[])
-                                            valid=tool is not None and isinstance(arguments,dict) and all(k in arguments for k in required)
-                                        except ValueError:valid=False
-                                        if not valid:
-                                            watch.stop('模型生成了未知工具或不完整参数，已停止本轮；未执行此调用。')
+                                        problem=diagnose_call(item,advertised)
+                                        if problem:
+                                            code,reason=problem
+                                            watch.stop(reason,code=code)
                                             raise GuardStopped(watch.reason)
                             if original_type == 'response.output_item.added':
                                 item = data.get('item') or {}
