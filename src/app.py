@@ -44,7 +44,7 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v51')
+        self.title('我的 Codex · 本地编程工作台 · v52')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
@@ -1223,10 +1223,12 @@ class App(ctk.CTk):
                         self.append(shown,save=False)
                 self.transcript.append(shown)
             elif item.get('type') == 'commandExecution':
+                if item.get('exitCode') == 0:self.tool_recovery.success(self.thread_id)
                 output = item.get('aggregatedOutput', '')
                 if output:
                     self.append(output[:6000] + ('\n[界面已折叠较长输出]' if len(output) > 6000 else '') + '\n')
             elif item.get('type') == 'fileChange':
+                if item.get('status') == 'completed':self.tool_recovery.success(self.thread_id)
                 for change in item.get('changes', []):
                     self.append('  ' + change.get('path', '') + '\n')
             elif item.get('type') == 'contextCompaction':

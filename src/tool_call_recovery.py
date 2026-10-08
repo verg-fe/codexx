@@ -2,6 +2,20 @@
 import json
 
 RECOVERABLE_CODES = frozenset({'tool_arguments_incomplete', 'tool_arguments_missing', 'tool_unknown'})
+
+class ToolCallFormatError(ValueError):
+    def __init__(self, code, message):
+        self.code = code
+        super().__init__(message)
+
+def decode_patch_arguments(raw):
+    try:
+        arguments = json.loads(raw)
+    except (ValueError, TypeError) as error:
+        raise ToolCallFormatError('tool_arguments_incomplete', '工具参数 JSON 未闭合或损坏；此调用未执行，请拆成小批次。') from error
+    if not isinstance(arguments, dict) or not isinstance(arguments.get('input'), str):
+        raise ToolCallFormatError('tool_arguments_missing', '补丁工具缺少字符串 input；此调用未执行，请按 schema 补齐。')
+    return arguments['input']
 BATCH_GUIDANCE = ('For file-writing tools, write one file or one small patch per call, at most 4000 '
                   'characters of source/patch input. Finish the JSON and patch terminator within the '
                   'current output budget. Do not put all source files into one call. Encode newlines '
@@ -31,6 +45,10 @@ class RecoveryBudget:
         self.seen = set()
         self.ticket = 0
         self.enabled = True
+
+    def success(self, thread):
+        # Limit consecutive malformed-call retries, not unrelated later incidents.
+        self.counts.pop(thread, None)
 
     def cancel(self, reset=False):
         self.ticket += 1

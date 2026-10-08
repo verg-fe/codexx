@@ -1,0 +1,22 @@
+{
+  "version": 52,
+  "backup": "D:\\LocalCodex\\backups\\runtime52-20261008-114609",
+  "app": "D:\\LocalCodex\\app\\MyCodex-runtime52",
+  "desktop_pid": 17716,
+  "adapter_version": "2026-10-08-runtime-52",
+  "thread": "01a117c9-8204-7352-8fde-2e7cf0cdf006",
+  "automatic_resume": false,
+  "context": 93000,
+  "compact": 87000,
+  "kv_cache_type": "q4_0",
+  "vision_gpu_offload": false,
+  "checks": [
+    "actual false-stop reasoning replay",
+    "bounded paragraph diagnostics",
+    "upstream terminal preservation",
+    "malformed patch-arguments handling",
+    "consecutive recovery budget",
+    "lossless Unicode log batching",
+    "packaged GUI stays alive and authenticated loopback health"
+  ]
+}

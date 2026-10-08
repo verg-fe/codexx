@@ -22,7 +22,7 @@ from core import reasoning_budget
 from generation_guard import GuardStore, GuardStopped, InferenceWatch, guard_options, repeated_failure
 from error_research import research_failure
 
-from tool_call_recovery import diagnose_call, BATCH_GUIDANCE
+from tool_call_recovery import diagnose_call, BATCH_GUIDANCE, decode_patch_arguments, ToolCallFormatError
 
 INFERENCE_LOCK = threading.Lock()
 
@@ -380,7 +380,7 @@ def adapt_event(data, names, ids, routes=None):
         if kind == 'response.function_call_arguments.delta':
             return []  # Wait for complete JSON, then emit a single raw patch delta.
         if kind == 'response.function_call_arguments.done':
-            value = json.loads(data.pop('arguments','{}')).get('input','')
+            value = decode_patch_arguments(data.pop('arguments','{}'))
             delta = {**data,'type':'response.custom_tool_call_input.delta','delta':value}
             data['type'] = 'response.custom_tool_call_input.done'
             data['input'] = value
@@ -590,6 +590,9 @@ class Handler(BaseHTTPRequestHandler):
                                 self.trace.event(data)
                             if watch:
                                 watch.event(data)
+                                for warning in watch.warnings:
+                                    if self.trace:self.trace.diagnostic(warning)
+                                watch.warnings.clear()
                                 if original_type=='response.output_item.done':
                                     item=data.get('item') or {}
                                     if item.get('type')=='function_call':
@@ -627,11 +630,17 @@ class Handler(BaseHTTPRequestHandler):
                 if watch and watch.stopped.is_set():raise GuardStopped(watch.reason)
                 self.wfile.write(b'0\r\n\r\n')
                 self.wfile.flush()
-                self.trace_outcome = 'upstream_eof' if response.status == 200 else 'upstream_http_error'
+                terminal=(self.trace.adapter_outcome or self.trace.terminal) if self.trace else None
+                self.trace_outcome = ('completed' if terminal=='response.completed' else
+                    'upstream_failed' if terminal=='response.failed' else
+                    'upstream_incomplete' if terminal=='response.incomplete' else
+                    'upstream_eof') if response.status==200 else 'upstream_http_error'
         except (BrokenPipeError, ConnectionResetError):
             self.trace_outcome = 'client_disconnected'
             if watch:watch.stop('客户端已断开，后台推理已取消。',notify=False)
-        except (GuardStopped,OSError,http.client.HTTPException) as error:
+        except (GuardStopped,ToolCallFormatError,OSError,http.client.HTTPException) as error:
+            if isinstance(error,ToolCallFormatError) and watch:
+                watch.stop(str(error),code=error.code)
             self.trace_outcome='guard_stopped' if watch and watch.stopped.is_set() else 'upstream_stream_error'
             if watch and not watch.stopped.is_set():watch.stop('模型流意外中断，已停止本轮并保留日志。')
             if watch:

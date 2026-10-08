@@ -97,7 +97,7 @@ class InferenceWatch:
         self.done=threading.Event();self.stopped=threading.Event();self.lock=threading.Lock()
         self.sockets=[];self.reason=None;self.started=time.monotonic()
         self.generated=None;self.reasoning=None;self.response_id=None;self.text=''
-        self.chunk_tail='';self.phrases=collections.Counter()
+        self.chunk_tail='';self.phrases=collections.OrderedDict();self.warnings=[]
         self.last_progress=self.started
         self.worker=threading.Thread(target=self._run,daemon=True)
 
@@ -162,7 +162,9 @@ class InferenceWatch:
         response=event.get('response') or {}
         if response.get('id'):self.response_id=response['id']
         if kind in ('response.incomplete','response.failed'):
-            self.stop('模型未能完成本次输出，已停止本轮；请查看日志后缩短步骤继续。')
+            # Preserve the upstream terminal and its precise cause.
+            self.reasoning=None
+            return
         if kind=='response.output_item.added' and (event.get('item') or {}).get('type')!='reasoning':
             self.reasoning=None
         if kind.endswith('.delta'):
@@ -176,8 +178,14 @@ class InferenceWatch:
                 for part in parts[:-1]:
                     key=re.sub(r'\s+',' ',part).strip().lower()
                     if len(key)>120:
-                        self.phrases[key]+=1
-                        if self.phrases[key]>=3:self.stop('检测到相同思考段落反复输出，已停止循环。')
+                        digest=hashlib.sha256(key.encode('utf-8')).hexdigest()
+                        count=self.phrases.get(digest,0)+1
+                        self.phrases[digest]=count
+                        self.phrases.move_to_end(digest)
+                        if len(self.phrases)>256:self.phrases.popitem(last=False)
+                        if count==3:
+                            # Repeated examples/planning are not proof of a stuck model.
+                            self.warnings.append({'code':'reasoning_repetition', 'count':count, 'paragraph_sha256':digest})
             else:self.reasoning=None
         if self.tool_enabled and kind=='response.output_item.done':
             item=event.get('item') or {}

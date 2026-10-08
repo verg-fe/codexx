@@ -46,9 +46,12 @@ class GenerationTrace:
         self.last_flush = self.started
         self.streams = {}  # Only per-item character counts and fixed-size hashes.
         self.terminal = None
+        self.adapter_outcome = None
         self.sequence = 0
         self.closed = False
         self.drafts = None
+        self.pending_delta = None
+        self.pending_since = self.started
         try:
             directory = Path(directory)
             directory.mkdir(parents=True, exist_ok=True)
@@ -56,7 +59,7 @@ class GenerationTrace:
             self.path = directory / (stamp + '-' + uuid.uuid4().hex[:12] + '.jsonl')
             self.file = self.path.open('x', encoding='utf-8', errors='backslashreplace', buffering=8192)
             fields = {key: metadata[key] for key in METADATA_FIELDS if key in metadata}
-            self._write({'event': 'request_started', 'format_version': 1,
+            self._write({'event': 'request_started', 'format_version': 2,
                          'started_utc': datetime.now(timezone.utc).isoformat(), **fields}, flush=True)
             if metadata.get('draft_directory'):
                 try:
@@ -80,7 +83,16 @@ class GenerationTrace:
             self.drafts = None
         print('generation trace unavailable: local log write failed', flush=True)
 
+    def _flush_delta(self):
+        pending=self.pending_delta
+        self.pending_delta=None
+        if pending is not None:self._write(pending)
+
+    def diagnostic(self, warning):
+        self._write({'event':'diagnostic', **warning}, flush=True)
+
     def _write(self, record, flush=False):
+        if record.get('event')!='generated_delta':self._flush_delta()
         if self.file is None or self.closed:
             return
         now = time.monotonic()
@@ -105,8 +117,20 @@ class GenerationTrace:
         count, digest = self.streams.get(key, (0, hashlib.sha256()))
         update_digest(digest, text)
         self.streams[key] = (count+len(text), digest)
-        self._write({'event': 'generated_delta', 'channel': key[0], 'item_id': key[1],
-                     'content_index': key[2], 'source': source, 'delta': text})
+        identity=(key, source)
+        pending=self.pending_delta
+        if pending and ((pending['channel'],pending['item_id'],pending['content_index']),pending['source'])!=identity:
+            self._flush_delta();pending=None
+        if pending is None:
+            self.pending_since=time.monotonic()
+            self.pending_delta={'event':'generated_delta','channel':key[0], 'item_id':key[1],
+                'content_index':key[2], 'source':source, 'delta':text, 'delta_count':1}
+        else:
+            pending['delta']+=text
+            pending['delta_count']+=1
+        now=time.monotonic()
+        if len(self.pending_delta['delta'])>=4096 or now-self.pending_since>=.25 or now-self.last_flush>=1:
+            self._flush_delta()
         if self.drafts is not None and key[0] in ('reasoning', 'text'):
             try:self.drafts.feed(key, text)
             except OSError:
@@ -204,6 +228,7 @@ class GenerationTrace:
             self._write({'event': 'upstream_error', 'code': data.get('code')}, flush=True)
 
     def adapter_terminal(self, data):
+        self.adapter_outcome = data.get('type')
         self._write({'event': 'adapter_terminal', 'type': data.get('type'),
                      'error_code': ((data.get('response') or {}).get('error') or {}).get('code')}, flush=True)
 
@@ -214,7 +239,7 @@ class GenerationTrace:
         for (channel, _, _), (count, _) in self.streams.items():
             counts[channel] = counts.get(channel, 0) + count
         self._write({'event': 'request_finished', 'transport': outcome,
-                     'upstream_terminal': self.terminal, 'http_status': http_status,
+                     'upstream_terminal': self.terminal, 'adapter_terminal': self.adapter_outcome, 'http_status': http_status,
                      'generated_characters': counts}, flush=True)
         self.closed = True
         if self.file is not None:
