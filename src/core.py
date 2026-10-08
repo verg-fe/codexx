@@ -49,14 +49,16 @@ MODELS = {
     HUIHUI_MODEL: {'label': 'Huihui · Qwen3.8 27B Q4_K', 'size': 16810714400, 'default_context': CONTEXT, 'context_limit': MAX_CONTEXT, 'vision': True},
     HUIHUI_IQ3S_MODEL: {'label': 'Huihui · 27B IQ3_S · 11.77 GB · 视觉', 'size': 11771546208, 'default_context': 97280, 'context_limit': MAX_CONTEXT, 'vision': True},
 }
+from model_catalog import ModelCatalog
+MODELS = ModelCatalog(ROOT, MODEL_DIRECTORY)
 MODEL_LOCK = threading.RLock()
 BACKENDS = {
     'vulkan': {'label': 'Vulkan', 'directory': 'runtime', 'device': 'Vulkan0'},
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-runtime-52'
-APP_VERSION = '2026-10-08-runtime-52'
+ADAPTER_VERSION = '2026-10-08-runtime-53'
+APP_VERSION = '2026-10-08-runtime-53'
 WORK_CONTEXT = 93000
 WORK_COMPACT = 87000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -138,7 +140,8 @@ def verified_context_limits():
 
 def context_limits():
     # The user-selected ceiling is separate from historical measured capacities.
-    return {name:MAX_CONTEXT for name in MODELS}
+    return {name:max(MIN_CONTEXT,min(MAX_CONTEXT,int(spec.get('context_limit',MAX_CONTEXT))))
+            for name,spec in MODELS.items()}
 
 def selected_model(settings=None):
     name = (settings or load_settings()).get('model', MODEL)
@@ -205,11 +208,16 @@ def model_directory(settings=None):
 
 
 def model_file(name, settings=None):
-    return model_directory(settings) / (name + '.gguf')
+    spec=MODELS[name]
+    if spec.get('path'):
+        return Path(spec['path'])
+    return model_directory(settings) / spec.get('filename',name+'.gguf')
 
 
-def vision_file(settings=None):
-    return model_directory(settings) / VISION_FILE.name
+def vision_file(settings=None, name=None):
+    name=name or selected_model(settings)
+    projector=MODELS[name].get('projector_filename')
+    return Path(projector) if projector and Path(projector).is_absolute() else model_directory(settings) / (projector or VISION_FILE.name)
 
 def model_supports_vision(name):
     return MODELS[name].get('vision', True)
@@ -228,7 +236,7 @@ def active_model_supports_vision(live):
 def model_required_files(name):
     files = [model_file(name)]
     if model_supports_vision(name):
-        files.append(vision_file())
+        files.append(vision_file(name=name))
     return files
 
 def context_for(settings, name):
@@ -403,7 +411,7 @@ def prepare(settings=None):
         'include_apps_usage_instructions': False, 'include_skills_usage_instructions': True,
         'include_plugin_usage_instructions': False,
     } for name in MODELS]}
-    (ROOT / 'model-catalog.json').write_text(json.dumps(catalog, indent=2), encoding='utf-8')
+    (ROOT / 'codex-model-catalog.json').write_text(json.dumps(catalog, indent=2), encoding='utf-8')
     working_context,working_compact=engine_limits(settings)
     config = fr'''model = "{settings['model']}"
 model_provider = "qwen_local"
@@ -412,7 +420,7 @@ model_auto_compact_token_limit = {working_compact}
 model_reasoning_effort = "{settings.get('reasoning_effort','xhigh')}"
 model_reasoning_summary = "none"
 model_instructions_file = 'D:\LocalCodex\instructions.md'
-model_catalog_json = 'D:\LocalCodex\model-catalog.json'
+model_catalog_json = 'D:\LocalCodex\codex-model-catalog.json'
 tool_output_token_limit = 2000
 project_doc_max_bytes = 12000
 approval_policy = "never"
@@ -454,6 +462,40 @@ sandbox = "unelevated"
     config+='startup_timeout_sec = 20\ntool_timeout_sec = 50\n'
     from windows_mcp_integration import config_fragment
     config += config_fragment(ROOT)
+    # The upstream app servers are lightweight stdio bridges; they never start a
+    # CAD GUI at client startup. The design-control tools start only the owned GUI.
+    if getattr(sys,'frozen',False):
+        local_mcp_command=sys.executable
+        local_mcp_args=lambda service:['--local-mcp-server',service]
+    else:
+        local_mcp_command=sys.executable
+        local_mcp_args=lambda service:[str(Path(__file__).parent/'local_mcp_servers.py'),service]
+    for service in ('model-manager','android','design-control'):
+        config+='\n[mcp_servers.'+service.replace('-','_')+']\ncommand = '+json.dumps(local_mcp_command)+'\nargs = '+json.dumps(local_mcp_args(service))+'\nstartup_timeout_sec = 20\ntool_timeout_sec = 300\nrequired = false\n'
+    for tool in ('model_download','model_download_cancel','model_register','model_activate','model_rollback'):
+        config += f'\n[mcp_servers.model_manager.tools.{tool}]\napproval_mode = "approve"\n'
+    for tool in ('android_install_apks','android_launch'):
+        config += f'\n[mcp_servers.android.tools.{tool}]\napproval_mode = "approve"\n'
+    for tool in ('blender_start','blender_stop','freecad_start','freecad_stop'):
+        config += f'\n[mcp_servers.design_control.tools.{tool}]\napproval_mode = "approve"\n'
+    blender_mcp=Path(r'G:\LocalCodex\tools\design-mcp-venv\Scripts\mcp-for-blender.exe')
+    if blender_mcp.is_file():
+        config+='\n[mcp_servers.blender]\ncommand = '+json.dumps(str(blender_mcp))+'\nargs = ["--host", "127.0.0.1", "--port", "9876"]\nstartup_timeout_sec = 20\ntool_timeout_sec = 300\nrequired = false\n'
+        config+='[mcp_servers.blender.env]\nDISABLE_TELEMETRY = "true"\n'
+    freecad_mcp=Path(r'G:\LocalCodex\tools\design-mcp-venv\Scripts\freecad-mcp.exe')
+    if freecad_mcp.is_file():
+        config+='\n[mcp_servers.freecad]\ncommand = '+json.dumps(str(freecad_mcp))+'\nargs = ["--host", "127.0.0.1", "--only-text-feedback"]\nstartup_timeout_sec = 20\ntool_timeout_sec = 900\nrequired = false\n'
+    for tool in ('create_document','create_object','edit_object','delete_object','execute_code','execute_code_async','execute_code_headless','run_fem_analysis','insert_part_from_library'):
+        config+=f'\n[mcp_servers.freecad.tools.{tool}]\napproval_mode = "approve"\n'
+    for tool in ('execute_code','execute_code_async','delete_object','stl_export','stl_inspect','design_optimize'):
+        config+=f'\n[mcp_servers.design_analysis.tools.{tool}]\napproval_mode = "approve"\n'
+    analysis_python=Path(r'G:\LocalCodex\tools\design-mcp-venv\Scripts\python.exe')
+    analysis_bundle=Path(__file__).resolve().parent
+    analysis_script=(analysis_bundle/'mcp-tools'/'design_analysis_mcp.py'
+                     if getattr(sys, 'frozen', False)
+                     else analysis_bundle/'design_analysis_mcp.py')
+    if analysis_python.is_file() and analysis_script.is_file():
+        config+='\n[mcp_servers.design_analysis]\ncommand = '+json.dumps(str(analysis_python))+'\nargs = '+json.dumps([str(analysis_script)])+'\nstartup_timeout_sec = 20\ntool_timeout_sec = 900\nrequired = false\n'
     ida_bridge = ROOT / 'tools' / 'ida-mcp' / 'ida_mcp_bridge.py'
     if ida_bridge.is_file():
         ida_python = Path.home() / 'AppData/Local/Programs/Python/Python312/python.exe'
@@ -518,7 +560,7 @@ def model_args(name, context):
         validate(settings,name,context,chat_template_state(name,settings),
                  emotion_state(ROOT,model_file(name),settings),selected_decoding(settings,name))
         return arguments(ROOT,runtime_executable(backend),settings,model_file(name),
-                         vision_file(settings) if configured_vision(name,settings) else None,context)
+                         vision_file(settings,name) if configured_vision(name,settings) else None,context)
     cache_location=kv_cache_location(context,settings)
     args = [str(runtime_executable(backend)), '-m', str(model_file(name)),
             '--alias', name, '--host', '127.0.0.1', '--port', '8080',
@@ -536,7 +578,7 @@ def model_args(name, context):
             '--spec-type', selected_decoding(settings,name), '--no-webui', '--image-max-tokens', '2048']
     if model_supports_vision(name):
         index = args.index('-np')
-        args[index:index] = ['--mmproj', str(vision_file(settings))]
+        args[index:index] = ['--mmproj', str(vision_file(settings,name))]
     else:
         index = args.index('--image-max-tokens')
         del args[index:index+2]
@@ -586,7 +628,8 @@ def gpu_memory_required_mib(name,context):
     # Include the entire GGUF (conservative), Q4 KV, vision and graph headroom.
     cache_bytes=18432*context if kv_cache_location(context)=='gpu' else 0
     extra_mtp=(cache_bytes/16/1048576+128) if selected_decoding(name=name)=='draft-mtp' else 0
-    vision_bytes = vision_file().stat().st_size if model_supports_vision(name) else 0
+    projector = vision_file(name=name)
+    vision_bytes = projector.stat().st_size if model_supports_vision(name) and projector.is_file() else 0
     return (model_file(name).stat().st_size+vision_bytes+cache_bytes)/1048576+1024+extra_mtp
 
 def gpu_device_memory():
@@ -800,7 +843,7 @@ def _start_model(name, context, wait, ceiling=None):
         'speculative_type':desired_decoding,
         'cpu_offload':load_settings().get('cpu_offload',False),'reasoning_budget':reasoning_budget(),
         'kv_cache_location':desired_cache,'vision_enabled':configured_vision(name),
-        'vision_projector':str(vision_file()) if configured_vision(name) else None,
+        'vision_projector':str(vision_file(settings,name)) if configured_vision(name,settings) else None,
         'vision_gpu_offload':load_settings().get('vision_gpu_offload',True),
         'kv_cache_type':load_settings().get('kv_cache_type','q4_0'),
         'isolated_console':True,'chat_template_policy':desired_template['policy'],

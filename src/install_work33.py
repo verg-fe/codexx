@@ -12,7 +12,7 @@ def main():
     root=core.ROOT;stage=root/'staging/work-options-33-ready/MyCodex';target=root/'app/MyCodex-work33'
     saved=(root/'settings.json').read_bytes();current=core.active_model()
     fixture=root/'verification-project/work33';fixture.mkdir(parents=True,exist_ok=True)
-    settings=json.loads(saved);settings.update(api_key='__REDACTED__',project=str(fixture))
+    settings=json.loads(saved);settings.update(api_key='fixture-only',project=str(fixture))
     (fixture/'settings.json').write_text(json.dumps(settings,ensure_ascii=False,indent=2),encoding='utf-8')
     env=os.environ.copy();env.update(LOCAL_CODEX_ROOT=str(fixture),LOCAL_CODEX_MODELS=str(core.MODEL_DIRECTORY))
     result=subprocess.run([str(stage/'MyCodex.exe'),'--verify-work33'],env=env,

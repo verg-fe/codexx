@@ -8,6 +8,7 @@ hiddenimports = []
 tmp_ret = collect_all('customtkinter')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 datas += [(str(Path(SPECPATH) / 'tools'), 'tools')]
+datas += [(str(Path(SPECPATH) / 'design_analysis_mcp.py'), 'mcp-tools')]
 
 
 a = Analysis(

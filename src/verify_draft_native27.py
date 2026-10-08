@@ -50,7 +50,7 @@ def main(frozen=None):
         with tempfile.TemporaryDirectory(prefix='draft-native23-',dir=original/'verification-project') as directory:
             root=Path(directory);identity['root']=root
             (root/'engine').mkdir();os.link(original/'engine/codex.exe',root/'engine/codex.exe')
-            settings={'model':core.MODEL,'project':str(root),'api_key':'__REDACTED__','context':256000,
+            settings={'model':core.MODEL,'project':str(root),'api_key':'private-test-only','context':256000,
                       'model_contexts':{core.MODEL:256000},'history_mode':'memory','work_context':76800}
             events=queue.Queue()
             with patch.object(core,'ROOT',root),patch.object(core.Path,'home',return_value=root/'no-home'):

@@ -1,3 +1,14 @@
+# codexx / 我的 Codex v53
+
+## 工作台工具与模型管理
+
+v53 改进工具结果归因和草稿读取去重，增加动态本地 GGUF 管理、FreeCAD/Blender/CAD 分析 MCP 与指定 Android 设备 APK 检查安装能力。构建通过，11 项回归测试通过；完成实际 STL、FEM、刚体模拟、模型下载续传和无害 APK 安装验收。当前生产模型没有切换，设备没有安装 Google 套件；v53 桌面入口部署后在下次启动生效。
+
+- [v53 实施与验收记录](docs/工作台改进-v53.md)
+- 私有 Release：v53-20261008（程序与筛选后的源码包）
+- 保留 context 93,000、compact 87,000、Q4 KV 和 CPU 图像编码；GPS/Xposed 原项目仍暂停。
+
+---
 # codexx / 我的 Codex v40
 
 ## 精准搜索与异常恢复

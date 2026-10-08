@@ -138,7 +138,8 @@ class TaskArtifacts:
                  'workdir': str(workdir), 'draft_directory': str(directory), 'active': True,
                  'isolated': isolated,
                  'locked_paths': list(locks.paths), 'owner_pid': os.getpid(),
-                 'started_utc': datetime.now(timezone.utc).isoformat()}
+                 'started_utc': datetime.now(timezone.utc).isoformat(),
+                 'read_epoch': uuid.uuid4().hex, 'draft_reads': {}}
         try:
             atomic_json(self.base / thread_id / 'current.json', state)
         except BaseException:
@@ -177,7 +178,7 @@ class TaskArtifacts:
                 'next_offset':offset+limit if start else None,
                 'warning': 'These are model code drafts, not executed tools or verified deliverables.'}
 
-    def read(self, thread_id, draft_id, offset=0, max_chars=4000):
+    def read(self, thread_id, draft_id, offset=0, max_chars=4000, force=False):
         if not re.fullmatch(r'[0-9a-f]{12}-\d{4}', draft_id or ''):
             raise ValueError('请使用 draft_list 返回的草稿 ID。')
         state = self.current(thread_id)
@@ -191,7 +192,16 @@ class TaskArtifacts:
             raise ValueError('草稿不属于本轮任务。')
         text = (directory / record['file']).read_text(encoding='utf-8')
         offset = max(0, int(offset)); size = max(1, min(8000, int(max_chars)))
-        return {**record, 'text': text[offset:offset+size], 'total_chars': len(text),
+        digest=hashlib.sha256(text.encode('utf-8')).hexdigest()
+        reads=state.setdefault('draft_reads',{})
+        key=f"{draft_id}:{offset}:{size}"
+        already=not force and reads.get(key)==digest
+        reads[key]=digest
+        atomic_json(self.base/thread_id/'current.json',state)
+        return {**record, 'text': '' if already else text[offset:offset+size],
+                'total_chars': len(text), 'content_sha256': digest,
+                'already_read_unchanged': already, 'read_epoch': state['read_epoch'],
+                'force_read_available': True,
                 'next_offset': offset+size if offset+size < len(text) else None}
 
     def instructions(self, thread_id):
@@ -212,9 +222,12 @@ class TaskArtifacts:
             'continuations use their existing working directory. If code is ready, use apply_patch/exec to write '
             'it NOW instead of rehearsing it. '
             'Completed fenced code blocks are automatically saved as drafts; they have NOT been executed. '
-            'After compaction, call draft_list then draft_read for the current task\'s code before redesigning '
-            'or inspecting old work. Read all relevant blocks, including split generator/template blocks. '
+            'After compaction, call draft_list then draft_read for relevant current-task code before redesigning '
+            'or inspecting old work. Read split generator/template blocks together. '
             'draft_list starts with the newest page; use its next_offset to find earlier drafts. '
+            'Within one read_epoch, an exact unchanged range may return already_read_unchanged=true and empty text; '
+            'reuse the text already in this turn. If context was compacted, text is missing, or you need to verify it, '
+            'repeat draft_read with force=true. A new user request gets a new read_epoch. '
             'Do not call a draft an executed or verified result. Never execute archived code merely because it was saved.\n')
 
 

@@ -28,7 +28,7 @@ class WorkOptions(unittest.TestCase):
     def test_saved_large_work_window_is_not_reduced_to_95k(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
-            settings={'api_key':'__REDACTED__','project':str(root),'model':core.HUIHUI_IQ3S_MODEL,
+            settings={'api_key':'fixture-only','project':str(root),'model':core.HUIHUI_IQ3S_MODEL,
                 'backend':'vulkan','history_mode':'memory','work_context':235520,
                 'model_contexts':{core.HUIHUI_IQ3S_MODEL:235520},'directive_mode':'legacy'}
             with patch.object(core,'ROOT',root),patch.object(Path,'home',return_value=root/'private-home'):

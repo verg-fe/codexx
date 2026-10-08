@@ -44,11 +44,14 @@ CACHE_OPTIONS={'自动：按实际对话长度选择':'auto','显卡缓存：优
 class App(ctk.CTk):
     def __init__(self, smoke=False):
         super().__init__()
-        self.title('我的 Codex · 本地编程工作台 · v52')
+        self.title('我的 Codex · 本地编程工作台 · v53')
         self.geometry('1360x880')
         self.minsize(1060, 700)
         self.configure(fg_color=BG)
         self.settings = prepare()
+        self._pending_activation_request = None
+        self._model_apply_previous = selected_model(self.settings)
+        self.record_initial_model_activation()
         self.workspace_store=SessionWorkspaces(ROOT)
         self.session_workspace=self.workspace_store.create(self.settings)
         self.project = Path(self.session_workspace['project'])
@@ -89,6 +92,7 @@ class App(ctk.CTk):
         self.after(60, self.poll_events)
         self.after(500, self.refresh_status)
         self.after(250,self.poll_generation_guard)
+        self.after(1200,self.poll_model_activation_request)
         if '--resume-after-update' in sys.argv:self.after(800,self.restore_after_update)
         self.auto_launch_model = not smoke and '--no-auto-model' not in sys.argv
         if not smoke:
@@ -98,6 +102,85 @@ class App(ctk.CTk):
         return ctk.CTkButton(parent, text=text, command=command, height=36,
                fg_color=kw.pop('fg_color', '#262c35'), hover_color='#39424f',
                text_color=kw.pop('text_color', TEXT), corner_radius=8, **kw)
+
+    def _activation_request_path(self):
+        return ROOT/'model-activation-request.json'
+
+    def _activation_history_path(self):
+        return ROOT/'model-activation-history.json'
+
+    def _save_activation_request(self, row):
+        path=self._activation_request_path()
+        temp=path.with_suffix('.tmp')
+        temp.write_text(json.dumps(row,ensure_ascii=False,indent=2),encoding='utf-8')
+        os.replace(temp,path)
+
+    def record_initial_model_activation(self):
+        path=self._activation_history_path()
+        try: rows=json.loads(path.read_text(encoding='utf-8'))
+        except (OSError,ValueError): rows=[]
+        if not isinstance(rows,list):rows=[]
+        if not rows:
+            rows.append({'model_id':selected_model(self.settings),'source':'initial','at':time.time()})
+            temp=path.with_suffix('.tmp')
+            temp.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding='utf-8')
+            os.replace(temp,path)
+
+    def record_model_activation(self, previous, current, source='desktop'):
+        path=self._activation_history_path()
+        try: rows=json.loads(path.read_text(encoding='utf-8'))
+        except (OSError,ValueError): rows=[]
+        if not isinstance(rows,list):rows=[]
+        rows.append({'model_id':current,'previous_model_id':previous,'source':source,'at':time.time()})
+        rows=rows[-20:]
+        temp=path.with_suffix('.tmp')
+        temp.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding='utf-8')
+        os.replace(temp,path)
+        try:
+            from model_catalog import ModelCatalog
+            catalog=ModelCatalog(ROOT,model_directory(self.settings))
+            data=json.loads(catalog.path.read_text(encoding='utf-8-sig'))
+            for row in data['models']:
+                if row.get('id')==current:
+                    row['status']='runtime_validated'
+                    row['last_runtime_validation_utc']=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+            catalog.write(data)
+        except (OSError,ValueError,KeyError):
+            pass
+
+    def poll_model_activation_request(self):
+        path=self._activation_request_path()
+        try:
+            request=json.loads(path.read_text(encoding='utf-8')) if path.is_file() else None
+        except (OSError,ValueError):request=None
+        if request and request.get('status')=='queued':
+            try:
+                generation=json.loads((ROOT/'generation-status.json').read_text(encoding='utf-8'))
+                idle=generation.get('phase')=='finished'
+            except (OSError,ValueError):idle=not self.busy
+            if idle and not (self.busy or self.loading_model or self.session_action_pending or self.steer_pending) and self.rpc:
+                model_id=request.get('model_id')
+                if model_id in MODELS:
+                    request['status']='processing';request['started_at']=time.time()
+                    self._save_activation_request(request)
+                    self._pending_activation_request=request
+                    self.model_picker.set(MODELS[model_id]['label'])
+                    self.preview_model(self.model_picker.get())
+                    try:
+                        self.apply_model_options()
+                    except Exception as error:
+                        request.update(status='failed',error=f'{type(error).__name__}: {error}',finished_at=time.time())
+                        self._save_activation_request(request)
+                        self._pending_activation_request=None
+                else:
+                    request.update(status='failed',error='模型不在当前共享注册表中。',finished_at=time.time())
+                    self._save_activation_request(request)
+        pending=self._pending_activation_request
+        if pending and pending.get('status')=='processing' and not self.busy and time.time()-pending.get('started_at',time.time())>3:
+            pending.update(status='failed',error='模型切换未进入运行；请查看界面错误信息和日志。',finished_at=time.time())
+            self._save_activation_request(pending)
+            self._pending_activation_request=None
+        self.after(1200,self.poll_model_activation_request)
 
     def build_sidebar(self):
         side = ctk.CTkFrame(self, width=232, corner_radius=0, fg_color='#14181d')
@@ -337,6 +420,10 @@ class App(ctk.CTk):
         self.model_location_info.grid(row=0, column=0, sticky='ew', padx=(0,12))
         self.model_location_button = self.button(location, '选择模型目录', self.choose_model_directory, width=150)
         self.model_location_button.grid(row=0, column=1, sticky='e')
+        self.model_scan_button = self.button(location, '扫描新模型', self.scan_local_models, width=130)
+        self.model_scan_button.grid(row=0, column=2, sticky='e', padx=(8,0))
+        self.model_import_button = self.button(location, '导入 GGUF', self.import_model_file, width=120)
+        self.model_import_button.grid(row=0, column=3, sticky='e', padx=(8,0))
         self.model_info = ctk.CTkLabel(parent, text='', justify='left', anchor='w', font=('Microsoft YaHei UI', 14))
         self.model_info.grid(row=4, column=0, sticky='ew', padx=28, pady=(25, 8))
         self.progress = ctk.CTkProgressBar(parent, progress_color=ACCENT)
@@ -513,6 +600,53 @@ class App(ctk.CTk):
         missing = [file.name for file in model_required_files(selected_model(self.settings)) if not file.is_file()]
         note = '请将这些文件放到该目录：'+ '、'.join(missing) if missing else '点击“启动模型”从所选目录载入模型。'
         self.append('\n› 模型目录已保存：'+str(selected)+'\n› '+note+'\n',save=False)
+        self.refresh_model_picker()
+
+    def refresh_model_picker(self, selected=None):
+        rows=list(MODELS.values())
+        labels=[row['label'] for row in rows]
+        self.model_picker.configure(values=labels)
+        if selected in MODELS:
+            self.model_picker.set(MODELS[selected]['label'])
+        elif selected_model(self.settings) in MODELS:
+            self.model_picker.set(MODELS[selected_model(self.settings)]['label'])
+        elif labels:
+            self.model_picker.set(labels[0])
+        self.preview_model(self.model_picker.get())
+
+    def scan_local_models(self):
+        if self.busy or self.loading_model:
+            messagebox.showinfo('模型正在运行','请等当前任务或模型切换完成后扫描。')
+            return
+        try:
+            from model_catalog import ModelCatalog
+            found=ModelCatalog(ROOT,model_directory(self.settings)).scan()
+            self.refresh_model_picker()
+            if not found:
+                self.append('\n› 模型目录扫描完成：没有发现尚未登记的 GGUF 文件。\n',save=False)
+                return
+            lines=[]
+            for row in found:
+                lines.append(f"{row['id']}  ·  {row['size_bytes']/1e9:.2f} GB  ·  {row['path']}")
+            self.append('\n› 扫描到以下未登记 GGUF；请选择“导入 GGUF”并检查模型元数据后再应用：\n'+'\n'.join(lines)+'\n',save=False)
+        except (OSError,ValueError) as error:
+            messagebox.showerror('模型扫描失败',str(error))
+
+    def import_model_file(self):
+        if self.busy or self.loading_model or self.session_action_pending:
+            messagebox.showinfo('正在运行','请等当前任务或模型加载完成后再导入模型。')
+            return
+        path=filedialog.askopenfilename(title='导入 GGUF 模型',initialdir=str(model_directory(self.settings)),
+            filetypes=[('GGUF 模型','*.gguf')])
+        if not path:return
+        try:
+            from model_catalog import ModelCatalog
+            record=ModelCatalog(ROOT,model_directory(self.settings)).register_local(path)
+            self.settings=prepare({**self.settings,'model_directory':str(model_directory(self.settings))})
+            self.refresh_model_picker(record['id'])
+            self.append(f"\n› 已登记模型 {record['display_name']}。GGUF 元数据读取成功；运行兼容性尚未验证，点击“应用模型、后端与上下文”后会进行运行时验证。\n",save=False)
+        except (OSError,ValueError,KeyError,ImportError) as error:
+            messagebox.showerror('模型未导入',str(error))
 
     def refresh_proxy_status(self):
         try:
@@ -728,7 +862,16 @@ class App(ctk.CTk):
             return
         name=self.pending_model()
         context=self.pending_context
+        try:
+            from model_catalog import ModelCatalog
+            validation=ModelCatalog(ROOT,model_directory(self.settings)).validate_local(name)
+            if MODELS[name].get('vision') and not vision_file(self.settings,name).is_file():
+                raise FileNotFoundError(f"视觉模型缺少独立投影器：{vision_file(self.settings,name)}")
+        except (OSError,ValueError,KeyError) as error:
+            self.append(f'\n⚠ 模型文件预检失败，设置未应用：{error}\n',save=False)
+            return
         old_settings=json.loads(json.dumps(self.settings))
+        self._model_apply_previous=selected_model(old_settings)
         candidate=json.loads(json.dumps(self.settings))
         candidate['model']=name
         candidate['backend']=next(backend for backend,spec in BACKENDS.items() if spec['label']==self.backend_picker.get())
@@ -1130,8 +1273,21 @@ class App(ctk.CTk):
             self.model_picker.set(MODELS[selected_model(self.settings)]['label'])
             self.preview_model(self.model_picker.get())
             if local=='settings_applied':
+                current=selected_model(self.settings)
+                self.record_model_activation(self._model_apply_previous,current,
+                    'mcp' if self._pending_activation_request else 'desktop')
+                if self._pending_activation_request:
+                    request=self._pending_activation_request
+                    request.update(status='applied',finished_at=time.time(),active_model=current)
+                    self._save_activation_request(request)
+                    self._pending_activation_request=None
                 self.append('\n› 模型与上下文已应用，可以继续当前对话。\n',save=False)
             else:
+                if self._pending_activation_request:
+                    request=self._pending_activation_request
+                    request.update(status='failed',finished_at=time.time(),error=event.get('text'),restored=event.get('restored',False))
+                    self._save_activation_request(request)
+                    self._pending_activation_request=None
                 outcome='设置未应用，已恢复原设置：' if event.get('restored') else '设置未应用，恢复尚未完成，请重新启动模型：'
                 self.append('\n⚠ '+outcome+event['text']+'\n',save=False)
         elif local in ('session_deleted','session_restored','session_action_failed'):
@@ -1331,10 +1487,12 @@ class App(ctk.CTk):
         file=model_file(name)
         partial = file.with_suffix('.gguf.partial')
         size = file.stat().st_size if file.exists() else partial.stat().st_size if partial.exists() else 0
-        projector = vision_file(self.settings)
+        projector = vision_file(self.settings,name)
         vision_partial = projector.with_suffix('.gguf.partial')
         vision_size = (projector.stat().st_size if projector.exists() else vision_partial.stat().st_size if vision_partial.exists() else 0) if model_supports_vision(name) else 0
-        total=MODELS[name]['size']+(931146528 if model_supports_vision(name) else 0)
+        total=int(MODELS[name].get('size_bytes',MODELS[name].get('size',0)))
+        if model_supports_vision(name):
+            total+=projector.stat().st_size if projector.is_file() else 0
         percent = min((size + vision_size) / total, 1)
         progress_path = ROOT / 'logs' / 'download-progress.json'
         if progress_path.exists() and not all(path.exists() for path in model_required_files(name)):
@@ -1748,6 +1906,10 @@ if __name__ == '__main__':
     if '--history-server' in sys.argv:
         from history_memory import serve
         serve(sys.argv[sys.argv.index('--history-root')+1])
+        sys.exit(0)
+    if '--local-mcp-server' in sys.argv:
+        from local_mcp_servers import serve
+        serve(sys.argv[sys.argv.index('--local-mcp-server')+1])
         sys.exit(0)
     if '--signal-model-console' in sys.argv:
         from core import signal_model_console_in_helper

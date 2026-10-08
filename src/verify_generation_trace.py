@@ -267,7 +267,7 @@ class GatewayTraceChecks(unittest.TestCase):
 
         stack = ExitStack()
         stack.enter_context(patch.object(gateway, 'ROOT', Path(directory)))
-        stack.enter_context(patch.object(gateway, 'load_settings', return_value={'api_key': '__REDACTED__'}))
+        stack.enter_context(patch.object(gateway, 'load_settings', return_value={'api_key': 'mock-authorization'}))
         stack.enter_context(patch.object(gateway, 'route_inference', return_value=dict(ROUTING)))
         stack.enter_context(patch.object(gateway, 'GenerationTrace', TrackingTrace))
         stack.enter_context(patch.object(gateway.urllib.request, 'urlopen', return_value=MockResponse(events)))
@@ -292,7 +292,7 @@ class GatewayTraceChecks(unittest.TestCase):
                     private = 'PRIVATE_HTTP_INPUT_SENTINEL'
                     connection.request('POST', '/v1/responses', json.dumps({
                         'model': MODEL, 'input': private, 'stream': True}), headers={
-                        'Authorization': 'Bearer __REDACTED__', 'Content-Type': 'application/json'})
+                        'Authorization': 'Bearer mock-authorization', 'Content-Type': 'application/json'})
                     response = connection.getresponse()
                     result = response.read().decode('utf-8')
                     self.assertEqual(response.status, 200)
@@ -307,7 +307,7 @@ class GatewayTraceChecks(unittest.TestCase):
                     self.assertEqual(reconstruct(rows)[('reasoning', 'r', 0)], 'mock thought')
                     raw = trace.path.read_text(encoding='utf-8')
                     self.assertNotIn(private, raw)
-                    self.assertNotIn('__REDACTED__', raw)
+                    self.assertNotIn('mock-authorization', raw)
                     self.assertTrue(trace.closed)
                     self.assertEqual(trace.streams, {})
                 finally:
@@ -321,7 +321,7 @@ class GatewayTraceChecks(unittest.TestCase):
         handler.command = 'POST'
         handler.path = '/v1/responses'
         body = json.dumps({'model': MODEL, 'input': 'mock input', 'stream': True}).encode()
-        handler.headers = {'Authorization': 'Bearer __REDACTED__', 'Content-Length': str(len(body))}
+        handler.headers = {'Authorization': 'Bearer mock-authorization', 'Content-Length': str(len(body))}
         handler.rfile = io.BytesIO(body)
         handler.wfile = io.BytesIO()
         handler.send_response = lambda *args: None

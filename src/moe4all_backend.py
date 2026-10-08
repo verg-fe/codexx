@@ -40,7 +40,7 @@ def arguments(root, executable, settings, weights, projector, context):
             'reasoning_effort = "medium"\n'
             '[kv]\ntype_k = "q8_0"\ntype_v = "q8_0"\nslots = 1\n'
             'dynamic = true\noverflow = false\nring = false\n'
-            '[serve]\napi_key = '__REDACTED__'api_key'])+'\n'
+            '[serve]\napi_key = '+json.dumps(settings['api_key'])+'\n'
             'max_tokens_cap = 4294967295\nrequest_timeout_secs = 0\nstats_interval_secs = 1\n')
     ram_mode = settings.get('moe_kv_mode') == 'ram'
     if ram_mode:
