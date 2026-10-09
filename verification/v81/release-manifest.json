@@ -1,0 +1,17 @@
+{
+  "release_tag": "v81-20261010",
+  "runtime_version": "2026-10-10-runtime-81",
+  "source_commit": "bc06efd42c86c1602e15823dd2478e578d775490",
+  "artifact": "MyCodex-v81-windows.zip",
+  "artifact_sha256": "833c9b8afa9e20c8d0913770172cf1c976f106de30e684fd7bdc067a2f2bd1ac",
+  "artifact_bytes": 40713244,
+  "executable_sha256": "c4afb2c0be43e00f4b969414d5b130c7f64edab2954c748ff845624a4b94de5e",
+  "executable_bytes": 7592430,
+  "packaged_file_count": 230,
+  "build": "PyInstaller 6.22.2; Python 3.14.7",
+  "build_result": "passed",
+  "zip_crc_check": "passed",
+  "required_skill_files": "present",
+  "ui_end_to_end": "not run in this environment",
+  "desktop_deployment": "not changed"
+}
