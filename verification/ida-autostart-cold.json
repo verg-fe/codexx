@@ -1,0 +1,29 @@
+{
+  "launch": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"status\": \"ready\", \"pid\": 1488, \"current_project\": {\"path\": \"G:\\\\LocalCodex-work\\\\mycodex-repair-20261009\\\\artifacts\\\\ida-huihui-setup\\\\huihui-ida-acceptance.elf\", \"module\": \"huihui-ida-acceptance.elf\", \"base\": \"0x400000\", \"size\": \"0x1006\", \"md5\": \"63665a603af0194cd109b915899885a3\", \"sha256\": \"f5e5a9e11f89329acabb09df9e60a9a1f925ece375716da7c4782d77e49235f0\", \"crc32\": \"0xe499448b\", \"filesize\": \"0x1006\"}, \"log_path\": \"G:\\\\LocalCodex\\\\ida-jobs\\\\ida-20261009-124911.log\"}"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "invalid_path": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "IDA connection failed: target_path must be an existing absolute file path.. Open IDA with the target database and check Codexx IDA MCP plugin."
+        }
+      ],
+      "isError": true
+    }
+  },
+  "tool_count": 28
+}

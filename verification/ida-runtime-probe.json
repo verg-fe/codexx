@@ -1,0 +1,10 @@
+{
+  "python_version": "3.8.10 (tags/v3.8.10:3d8993a, May  3 2021, 11:48:03) [MSC v.1928 64 bit (AMD64)]",
+  "kernel_version": "7.7",
+  "input_path": "G:\\LocalCodex-work\\mycodex-repair-20261009\\artifacts\\ida-huihui-setup\\huihui-ida-acceptance.elf",
+  "functions": 1,
+  "entry": "0x401000",
+  "hexrays_initialized": true,
+  "pseudocode": "__int64 huihui_acceptance_answer()\n{\n  return 42LL;\n}\n",
+  "database_saved": true
+}

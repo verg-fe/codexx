@@ -82,7 +82,7 @@ def start_server():
         threading.Thread(target=_server.serve_forever,daemon=True).start()
         print("Codexx IDA bridge ready: 127.0.0.1:26868")
 class CodexxIDA(idaapi.plugin_t):
-    flags=idaapi.PLUGIN_KEEP
+    flags=idaapi.PLUGIN_FIX | idaapi.PLUGIN_KEEP
     comment="Local r0idamcp compatibility bridge"
     help=""
     wanted_name="Codexx IDA MCP"

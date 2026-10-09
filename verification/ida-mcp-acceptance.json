@@ -1,0 +1,753 @@
+{
+  "exit_code": 0,
+  "replies": [
+    {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {
+          "tools": {}
+        },
+        "serverInfo": {
+          "name": "codexx-ida-local",
+          "version": "1.0"
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "tools": [
+          {
+            "name": "check_connection",
+            "description": "Checks the connection status with the IDA Pro MCP server and retrieves the loaded module name.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_project_metadata",
+            "description": "Retrieves metadata about the currently IDA-Pro project.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_function_info_by_name",
+            "description": "Retrieves details (address, name, size) for a function using its name (mangled or demangled).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Mangled or demangled name of the target function."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_function_info_by_address",
+            "description": "Retrieves info (address, name, size) for a function using its starting address.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "A hexadecimal string start as '0x' (e.g., '0x14001000'), representation of the function's start address."
+                }
+              },
+              "required": [
+                "address"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_current_address",
+            "description": "Gets the address currently selected (under the cursor) in the IDA user interface.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_current_function",
+            "description": "Gets details (address, name, size) of the function containing the currently selected in IDA window.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "convert_number",
+            "description": "Converts a number string (hex/dec) into various representations: decimal, hexadecimal, bytes (hex), potential ASCII, and binary.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "description": "Number represented as a string (e.g., \"100\", \"0x64\"). Supports decimal and hexadecimal formats."
+                },
+                "size": {
+                  "type": "integer",
+                  "description": "Mandatory size in bytes (positive integer) to assume for byte/ASCII conversion."
+                }
+              },
+              "required": [
+                "text",
+                "size"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "list_functions",
+            "description": "Lists functions defined in the analysis database, with support for pagination.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "offset": {
+                  "type": "integer",
+                  "description": "Starting index for pagination (0-based)."
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Maximum number of function entries per page (0 retrieves all remaining functions from the offset)."
+                }
+              },
+              "required": [
+                "offset",
+                "count"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "list_strings",
+            "description": "Lists string literals found in the analysis database, with support for pagination.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "offset": {
+                  "type": "integer",
+                  "description": "Starting index for pagination (0-based)."
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Similar to the list_functions method."
+                }
+              },
+              "required": [
+                "offset",
+                "count"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "search_strings_regex",
+            "description": "Searches for string literals matching a given regular expression (case-insensitive), returning results paginated.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "pattern_str": {
+                  "type": "string",
+                  "description": "Regular expression pattern to match against string literal content (case-insensitive)."
+                },
+                "offset": {
+                  "type": "integer",
+                  "description": "Starting index for pagination (0-based)."
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Maximum number of matching string literal entries per page (0 retrieves all remaining matches from the offset)."
+                }
+              },
+              "required": [
+                "pattern_str",
+                "offset",
+                "count"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "search_strings_substring",
+            "description": "Searches for string literals containing a given substring (case-insensitive), returning results paginated.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Substring to search for within string literal content (case-insensitive)."
+                },
+                "offset": {
+                  "type": "integer",
+                  "description": "Similar to the search_strings_regex method."
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Similar to the search_strings_regex method."
+                }
+              },
+              "required": [
+                "pattern",
+                "offset",
+                "count"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "decompile_function",
+            "description": "Decompiles the function specified by function_address or function_name.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "function_address": {
+                  "type": "string",
+                  "description": "The function's start address, a hexadecimal string start as '0x' (e.g., '0x14001000'), if not empty string, function_name must be empty string(\"\")."
+                },
+                "function_name": {
+                  "type": "string",
+                  "description": "The name of the function to decompile, if not empty string, function_address must be empty string(\"\")."
+                }
+              },
+              "required": [
+                "function_address",
+                "function_name"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "disassemble_function",
+            "description": "Retrieves the disassembly listing for a function, specified by its start address.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "start_address": {
+                  "type": "string",
+                  "description": "The function's start address, a hexadecimal string start as '0x'."
+                }
+              },
+              "required": [
+                "start_address"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_xrefs_to",
+            "description": "Finds all code and data cross-references (Xrefs) that point *to* the given address.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "The target address, a hexadecimal string start as '0x'."
+                }
+              },
+              "required": [
+                "address"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_entry_points",
+            "description": "Lists all defined program entry point functions in the analysis database.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "set_comment",
+            "description": "Sets or updates a comment at a specific address. For line comments, the line address is presented in the decompiled code.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "Where the comment should be placed, a hexadecimal string start as '0x' (e.g., '0x14001000')."
+                },
+                "comment": {
+                  "type": "string",
+                  "description": "The comment text."
+                }
+              },
+              "required": [
+                "address",
+                "comment"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "rename_local_variable",
+            "description": "Renames a local variable in a function. Identified by function_address or function_name.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "function_address": {
+                  "type": "string",
+                  "description": "A hexadecimal string start as '0x', if not empty string, function_name must be empty string(\"\")."
+                },
+                "function_name": {
+                  "type": "string",
+                  "description": "The name of the function containing the local variable, if not empty string, function_address must be empty string(\"\")."
+                },
+                "old_name": {
+                  "type": "string",
+                  "description": "The current name of the local variable as seen in the decompilation."
+                },
+                "new_name": {
+                  "type": "string",
+                  "description": "The desired new name for the local variable. If empty, IDA assigns a default name."
+                }
+              },
+              "required": [
+                "function_address",
+                "function_name",
+                "old_name",
+                "new_name"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "set_local_variable_type",
+            "description": "Sets the data type of a local variable in the function. Identified by function_address or function_name, if provid one, the other one must be empty string(\"\").",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "function_address": {
+                  "type": "string",
+                  "description": "A hexadecimal string start as'0x'."
+                },
+                "function_name": {
+                  "type": "string",
+                  "description": "The name of the function containing the local variable."
+                },
+                "variable_name": {
+                  "type": "string",
+                  "description": "The name of the local variable."
+                },
+                "new_type": {
+                  "type": "string",
+                  "description": "The new C-style data type declaration string (e.g., \"int\", \"char *\", \"MyStruct *\")."
+                }
+              },
+              "required": [
+                "function_address",
+                "function_name",
+                "variable_name",
+                "new_type"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "rename_global_variable",
+            "description": "Renames a global variable (data location) or function identified by its current name.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "old_name": {
+                  "type": "string",
+                  "description": "The current name of the global variable or function."
+                },
+                "new_name": {
+                  "type": "string",
+                  "description": "The desired new name."
+                }
+              },
+              "required": [
+                "old_name",
+                "new_name"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "set_global_variable_type",
+            "description": "Sets the data type of a global variable identified by its name.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "variable_name": {
+                  "type": "string",
+                  "description": "The name of the global variable whose type needs to be changed."
+                },
+                "new_type": {
+                  "type": "string",
+                  "description": "The new C-style data type declaration string (e.g., \"int\", \"MyStruct *\", \"char[16]\")."
+                }
+              },
+              "required": [
+                "variable_name",
+                "new_type"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "rename_function",
+            "description": "Renames the function. Identified by function_address or function_name.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "function_address": {
+                  "type": "string",
+                  "description": "A hexadecimal string start as'0x' (e.g., '0x14001000'), if not empty string, function_name must be empty string(\"\")."
+                },
+                "function_name": {
+                  "type": "string",
+                  "description": "The name of the function to rename, if not empty string, function_address must be empty string(\"\")"
+                },
+                "new_name": {
+                  "type": "string",
+                  "description": "The desired new name for the function. If empty, IDA assigns a default name."
+                }
+              },
+              "required": [
+                "function_address",
+                "function_name",
+                "new_name"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "set_function_prototype",
+            "description": "Sets the C-style function prototype for the function. Identified by function_address or function_name, if provid one, the other one must be empty string.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "function_address": {
+                  "type": "string",
+                  "description": "A hexadecimal string start as'0x'."
+                },
+                "function_name": {
+                  "type": "string",
+                  "description": "The name of the function whose prototype will be set."
+                },
+                "prototype": {
+                  "type": "string",
+                  "description": "The new C-style function prototype string (e.g., \"int __cdecl my_func(int a, char *b)\", \"void setup(void)\")."
+                }
+              },
+              "required": [
+                "function_address",
+                "function_name",
+                "prototype"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "declare_c_type",
+            "description": "Declares or updates a local type (struct, union, enum, typedef) within IDA's type system using a C declaration string.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "c_declaration": {
+                  "type": "string",
+                  "description": "A C language declaration string defining a struct, union, enum, or typedef (e.g., \"typedef int user_id_t;\", \"struct Point { int x; int y; };\")."
+                }
+              },
+              "required": [
+                "c_declaration"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": true,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_segments",
+            "description": "Retrieves information about all memory segments defined in the analysis database (e.g., .text, .data).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "required": []
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_machine_instruction_length",
+            "description": "Gets the length (in bytes) of the machine instruction located at the given address.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "Address of the machine instruction (e.g., '0x14001000')."
+                }
+              },
+              "required": [
+                "address"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_bytes",
+            "description": "Reads a sequence of byte values from the specified address. Returns a list of integers (0-255).",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "description": "Address to start reading bytes from."
+                },
+                "size": {
+                  "type": "integer",
+                  "description": "The number of bytes to read."
+                }
+              },
+              "required": [
+                "address",
+                "size"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "get_xrefs_to_field",
+            "description": "Get all cross references to a named struct field (member)",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "struct_name": {
+                  "type": "string"
+                },
+                "field_name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "struct_name",
+                "field_name"
+              ]
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          },
+          {
+            "name": "start_ida",
+            "description": "Start the installed IDA Pro with bundled Python 3.8 and an absolute target file path. Checks existing instances to avoid duplicates. User data and temporary files stay on G:.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "target_path": {
+                  "type": "string",
+                  "description": "Absolute path to the binary or saved IDA database to analyze."
+                }
+              },
+              "required": [
+                "target_path"
+              ],
+              "additionalProperties": false
+            },
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": false,
+              "openWorldHint": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "\"Successfully connected to IDA Pro (open file: huihui-ida-acceptance.elf)\""
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"path\": \"G:\\\\LocalCodex-work\\\\mycodex-repair-20261009\\\\artifacts\\\\ida-huihui-setup\\\\huihui-ida-acceptance.elf\", \"module\": \"huihui-ida-acceptance.elf\", \"base\": \"0x400000\", \"size\": \"0x1006\", \"md5\": \"63665a603af0194cd109b915899885a3\", \"sha256\": \"f5e5a9e11f89329acabb09df9e60a9a1f925ece375716da7c4782d77e49235f0\", \"crc32\": \"0xe499448b\", \"filesize\": \"0x1006\"}"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 5,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"address\": \"0x401000\", \"name\": \"huihui_acceptance_answer\", \"size\": \"0x6\"}"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 6,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "\"0x401000: mov     eax, 2Ah ; '*'\\n0x401005: retn\""
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 7,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "\"/* line: 0, address: 0x401000 */ __int64 huihui_acceptance_answer()\\n/* line: 1 */ {\\n/* line: 2, address: 0x401005 */   return 42LL;\\n/* line: 3 */ }\""
+          }
+        ],
+        "isError": false
+      }
+    }
+  ],
+  "stderr": ""
+}

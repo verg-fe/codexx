@@ -5,6 +5,18 @@ description: 需要在 IDA 中查函数、反编译、查看字符串和交叉�
 
 # 本机 IDA MCP
 
+## 自动启动工具
+
+`ida_local.start_ida(target_path)` 已接入。用户给出目标文件后，如 IDA 未运行，调用此工具，传入现有文件的绝对路径；不再要求用户手动启用插件。工具使用随附 Python 3.8，自动加载 MCP，日志在 G:/LocalCodex/ida-jobs。返回 ready 后核对 current_project；返回 already_running 时必须核对当前文件是否是用户目标，不能将另一数据库的结果混用；返回 starting 时稍后检查连接，不重复启动。已有进程但 MCP 无响应时，诊断已有窗口和日志。2026-10-09 实测冷启动、重复调用防重复实例、错误路径拒绝及启动后反汇编/反编译通过；当前工具发现总数 28。
+## 当前启动入口（2026-10-09 验收）
+
+需要启动 IDA 时使用 `G:/LocalCodex/tools/ida-mcp/Launch-IDA-Huihui.cmd`，把目标文件作为参数传入。此启动器只对子进程固定随附 Python 3.8.10，清除继承的 Python 环境变量，将用户目录与临时文件放在 G 盘，并设置 Qt 软件渲染。不要直接启动 ida64.exe 后假定 Python 环境正确。
+
+该目录中的程序实际内核版本为 7.7，目录名 7.6 不代表程序版本。MCP 名称为 `ida_local`，只连接本机 127.0.0.1:26868。先 check_connection 并用 get_project_metadata 核对目标文件，再分析函数；未连接时先检查已有 IDA 窗口，避免重复启动多个实例。验证报告在 `G:/LocalCodex-work/mycodex-repair-20261009/artifacts/ida-huihui-setup/mcp-acceptance.json`：真实 stdio MCP 返回 27 个工具，原生 x64 测试函数成功反汇编、反编译为 return 42。此结果不代表 Dalvik DEX 支持 Hex-Rays 反编译，也不代表全部 27 个工具已重新测试。
+
+以下是较早的诊断与验收记录；其中 PID 和启动状态不能当作当前状态。
+
+
 ## 运行状态与安全提示
 
 用户指定使用 `G:/IDA Pro v7.6.210427/ida64.exe`。实际文件元数据报告版本 `7.7.22.0118`、发布者字段 `www.52pojie.cn`，未签名，旁边有 `Keygen.7z`。本机 Python 启动报错 `No module named 'imp'` 后，已在其 `python/3/imp.py` 添加基于 `importlib` 的源码兼容层；原目录没有同名文件。补丁先在隔离目录用随附 Python 3.8.10、系统 Python 3.12.10 和 3.14.7 做了 find/load/reload 测试。字节码补丁因 magic number 不匹配已撤回，备份记录在 `G:/LocalCodex-work/mycodex-repair-20261009/backups/ida-imp-compat-20261009`。
