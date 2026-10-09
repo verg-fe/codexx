@@ -1,0 +1,25 @@
+{
+  "adapter_version": "2026-10-09-runtime-70",
+  "requests": [
+    {
+      "scenario": "real Windows deny-delete lock on request-routing.json",
+      "http_status": 200,
+      "response_status": "completed",
+      "text": "OK",
+      "elapsed_seconds": 2.418
+    },
+    {
+      "scenario": "normal write after lock release",
+      "http_status": 200,
+      "response_status": "completed",
+      "text": "OK",
+      "elapsed_seconds": 0.87
+    }
+  ],
+  "model_pid_unchanged": true,
+  "model_pid": 16528,
+  "context": 93000,
+  "vision_gpu_offload": false,
+  "kv_cache_type": "q4_0",
+  "routing_record_valid_json": true
+}

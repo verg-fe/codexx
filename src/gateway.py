@@ -7,6 +7,7 @@ import json
 import sqlite3
 import time
 import threading
+import tempfile
 import socket
 import http.client
 import os
@@ -27,6 +28,41 @@ from error_research import research_failure
 from tool_call_recovery import diagnose_call, BATCH_GUIDANCE, decode_patch_arguments, ToolCallFormatError
 
 INFERENCE_LOCK = threading.Lock()
+STATUS_WRITE_LOCK = threading.Lock()
+
+def write_status_json(path, value):
+    """Best-effort atomic telemetry; Windows readers must not break inference."""
+    temporary = None
+    try:
+        # Unique names prevent another process/thread from replacing our temp file.
+        # Close the handle before replacing: Windows denies rename of open files.
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                dir=path.parent, prefix='.' + path.name + '.', suffix='.tmp',
+                delete=False) as stream:
+            temporary = stream.name
+            json.dump(value, stream, ensure_ascii=False)
+        # Windows may also deny simultaneous replaces of the destination itself.
+        with STATUS_WRITE_LOCK:
+            for attempt in range(5):
+                try:
+                    os.replace(temporary, path)
+                    temporary = None
+                    return True
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(.025 * (2 ** attempt))
+    except OSError as error:
+        print(f'Status snapshot unavailable: {path.name} '
+              f'({type(error).__name__}, WinError {getattr(error, "winerror", None)})',
+              flush=True)
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+    return False
 
 def append_runtime_state(body, text):
     # Updating the first system message invalidates an entire hybrid-model KV
@@ -46,13 +82,8 @@ def attach_task_state(body,root=ROOT):
 
 def save_generation_phase(phase, tool_name=None, trace_name=None):
     # Status contains only a stage and tool name, never prompt or generated text.
-    try:
-        path = ROOT/'generation-status.json'
-        temporary = path.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'phase': phase, 'tool_name': tool_name, 'trace_file': trace_name}), encoding='utf-8')
-        temporary.replace(path)
-    except OSError:
-        pass
+    write_status_json(ROOT/'generation-status.json',
+        {'phase': phase, 'tool_name': tool_name, 'trace_file': trace_name})
 
 def compatible_image_url(url):
     """Transcode codecs stb_image cannot read without discarding the attachment."""
@@ -348,9 +379,7 @@ def route_inference(body, route, settings, name, media_converted=0, vision_stats
     if thread_id:record['thread_id']=thread_id
     path=ROOT/'request-routing.json'
     def save():
-        temporary=path.with_suffix('.tmp')
-        temporary.write_text(json.dumps(record),encoding='utf-8')
-        temporary.replace(path)
+        return write_status_json(path, record)
     save()
     start_model(name,ceiling,wait=True,prompt_tokens=prompt_tokens,output_reserve=reserve,
                 full_context=prompt_tokens is None)
@@ -541,7 +570,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(result)
                 return
             except (OSError, RuntimeError) as error:
-                self.send_error(503, str(error).encode('ascii','replace').decode())
+                result=json.dumps({'error':{'code':'local_gateway_unavailable',
+                    'type':'server_error','message':str(error) or '本地模型接口暂时不可用。'}},
+                    ensure_ascii=False).encode('utf-8')
+                self.send_response(503)
+                self.send_header('Content-Type','application/json; charset=utf-8')
+                self.send_header('Content-Length',str(len(result)))
+                self.send_header('Connection','close')
+                self.end_headers()
+                self.wfile.write(result)
                 return
             if route == '/v1/responses' and streaming:
                 self.trace = GenerationTrace(ROOT/'logs'/'generation', routing)

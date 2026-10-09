@@ -1,3 +1,12 @@
+# codexx / 我的 Codex v70
+
+修复 Windows 状态文件占用被误报为 503：状态写入可重试且不阻断推理，接口错误保留中文 JSON。
+6 项回归通过；真实锁文件与正常请求均返回 HTTP 200 和 OK。
+Windows 包包含 MCP、技能和手机 PWA；[下载 v70](https://github.com/verg-fe/codexx/releases/tag/v70-20261009)。
+[修复与验收记录](docs/工作台改进-v70.md)。
+
+---
+
 # codexx / 我的 Codex v69
 
 ## v69：提示前缀复用与 MCP 桌面/手机应用发布
