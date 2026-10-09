@@ -553,7 +553,7 @@ def _launch_package(package_name):
 
 def _screenshot(destination=''):
     _require_device()
-    target = Path(destination).expanduser() if destination else ROOT / 'logs' / 'android' / f'screen-{int(time.time())}.png'
+    target = Path(destination).expanduser() if destination else Path(r'G:\LocalCodex\logs\android') / f'screen-{int(time.time())}.png'
     target.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run([str(ADB), '-s', DEVICE, 'exec-out', 'screencap', '-p'], capture_output=True,
                             timeout=30, creationflags=NO_WINDOW)
@@ -812,6 +812,9 @@ def _schemas():
 
 
 def _dispatch(service, name, args):
+    if service in ('android','android-coordinates') and name in ('screen_prepare_vision','screen_map_prepared_point'):
+        from vision_crop import prepare,map_view
+        return (prepare if name=='screen_prepare_vision' else map_view)(**args)
     if service in ('android','android-coordinates') and name=='screen_map_point':
         from screen_coordinates import map_point
         return map_point(**args)
@@ -848,7 +851,21 @@ def _dispatch(service, name, args):
         if name == 'android_install_apks': return _install_apks(args['apk_paths'], args['package_name'], args['expected_certificate_sha256'], bool(args.get('allow_downgrade',False)))
         if name == 'android_launch': return _launch_package(args['package_name'])
         if name == 'android_accessibility_tree': return _accessibility_tree()
-        if name == 'android_screenshot': return _screenshot(args.get('destination',''))
+        if name == 'android_screenshot':
+            try:
+                result=android_coordinates.snapshot(_adb,_screenshot,_require_device)
+            except (OSError,RuntimeError,ValueError) as error:
+                result=_screenshot(args.get('destination',''))
+                return result | {'control_tree_available':False,'note':'Control tree unavailable; request android_ui_request_vision with this image path and reason before viewing. Do not guess taps.','control_error':str(error)[:300]}
+            destination=args.get('destination','')
+            if destination:
+                target=Path(destination).expanduser();target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(Path(result['screenshot_path']).read_bytes())
+                from ui_image_gate import register_snapshot
+                register_snapshot(target,android_coordinates._load(result['snapshot_id']))
+                result['path']=str(target.resolve())
+            else:result['path']=result['screenshot_path']
+            return result | {'control_tree_available':True,'note':'Visible controls are included as text: use locate and guarded click, not view_image by default. Unlabelled/custom targets may need explicit android_ui_request_vision.'}
         if name == 'android_logcat': return _logcat(args.get('package_name',''), args.get('lines',300))
     if service == 'design-control':
         if name == 'design_status': return _design_status()

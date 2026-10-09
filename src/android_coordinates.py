@@ -59,6 +59,8 @@ def snapshot(adb,screenshot,require_device,query='',limit=40):
         annotated=JOBS/(token+'-numbered.png');img.save(annotated);state['numbered_image_path']=str(annotated)
     except ImportError:state['numbered_image_note']='Pillow unavailable; use original screenshot and candidate bounds.'
     (JOBS/(token+'.json')).write_text(json.dumps(state,ensure_ascii=False),encoding='utf-8')
+    from ui_image_gate import register_snapshot
+    register_snapshot(path,state)
     visible=[r for r in rows if not query or any(query in r[k] for k in ('text','description','resource_id'))]
     limit=max(1,min(int(limit),120))
     return {k:v for k,v in state.items() if k not in ('fingerprint','attempts','screenshot_sha256','candidates')} | {'candidates':visible[:limit],'query':query,'candidates_truncated':len(visible)>limit,'coordinate_system':'Original PNG pixel coordinates; origin top-left. Do not use resized display coordinates directly.','candidate_count':len(rows),'matching_candidate_count':len(visible),'note':'Use query to reduce output. android_ui_locate searches the full saved candidate list.'}
@@ -167,8 +169,12 @@ def click(adb,screenshot,require_device,token,candidate_id=None,device_point=Non
 
 def schemas():
     from screen_coordinates import SCHEMA
+    from vision_crop import SCHEMAS
     token={'type':'string'}
-    return [SCHEMA,
+    return [SCHEMA,*SCHEMAS,
+        ('android_ui_prepare_vision','For an unfamiliar symbol: crop a fresh snapshot and losslessly compress PNG, preserving offset and pixels. Automatically allows CPU vision of the crop; map through android_ui_map_prepared_point then guarded click.',{'type':'object','properties':{'snapshot_id':token,'crop':{'type':'array','items':{'type':'integer'},'minItems':4,'maxItems':4},'reason':token},'required':['snapshot_id','crop','reason']}),
+        ('android_ui_map_prepared_point','Map normalized crop coordinates back to the device using saved crop metadata; no manual offset calculation. Pass device_point and snapshot_id to android_ui_click for freshness checks.',{'type':'object','properties':{'view_id':token,'x':{'type':'number'},'y':{'type':'number'},'display_width':{'type':'number','default':1},'display_height':{'type':'number','default':1}},'required':['view_id','x','y']}),
+        ('android_ui_request_vision','Explicit CPU vision fallback for an unfamiliar/custom target after checking controls and known templates. Grants a hash-bound 180-second image read; then call view_image on that exact path.',{'type':'object','properties':{'image_path':token,'reason':token},'required':['image_path','reason']}),
         ('android_ui_snapshot','Capture fresh original-size PNG, numbered image and UI bounds on G:. Pass target query to reduce tokens and avoid CPU vision when controls are found.',{'type':'object','properties':{'query':{'type':'string','default':''},'limit':{'type':'integer','default':40}}}),
         ('android_ui_locate','Find text, description or resource id in a fresh snapshot; return candidate coordinates and ambiguity.',{'type':'object','properties':{'snapshot_id':token,'query':token,'field':{'type':'string','enum':['text','description','resource_id'],'default':'text'},'match_mode':{'type':'string','enum':['exact','contains'],'default':'exact'}},'required':['snapshot_id','query']}),
         ('android_ui_icon_template','Save a known icon crop from original-pixel screenshot bounds on G: for later CPU matching.',{'type':'object','properties':{'snapshot_id':token,'bounds':{'type':'array','items':{'type':'integer'},'minItems':4,'maxItems':4}},'required':['snapshot_id','bounds']}),
@@ -177,6 +183,25 @@ def schemas():
         ('android_ui_click','Validate snapshot freshness, tap one candidate or explicitly mapped device point, then return fresh evidence. Does not assert business success.',{'type':'object','properties':{'snapshot_id':token,'candidate_id':{'type':'integer'},'device_point':{'type':'array','items':{'type':'integer'},'minItems':2,'maxItems':2},'use_root':{'type':'boolean','default':False},'expected_text':{'type':'string','default':''}},'required':['snapshot_id']})]
 
 def dispatch(name,args,adb,screenshot,require_device):
+    if name=='android_ui_prepare_vision':
+        from vision_crop import prepare
+        from ui_image_gate import request_vision
+        state=_load(args['snapshot_id'])
+        if not str(args['reason']).strip():raise ValueError('Explain why controls/templates are insufficient.')
+        view=prepare(state['screenshot_path'],args['crop'],output_dir=JOBS)
+        view['snapshot_id']=state['snapshot_id']
+        (JOBS/(view['view_id']+'-view.json')).write_text(json.dumps(view,ensure_ascii=False),encoding='utf-8')
+        request_vision(view['image_path'],args['reason'])
+        return view
+    if name=='android_ui_map_prepared_point':
+        from vision_crop import load,map_view
+        state=load(args['view_id'],JOBS);snapshot_state=_load(state['snapshot_id'])
+        if state['source_sha256']!=snapshot_state['screenshot_sha256']:raise ValueError('Source does not match snapshot.')
+        mapped=map_view(args['view_id'],args['x'],args['y'],args.get('display_width',1),args.get('display_height',1),JOBS)
+        return mapped | {'snapshot_id':state['snapshot_id'],'device_point':mapped['image_point'],'next':'Use android_ui_click with this snapshot_id and device_point; do not use a raw shell tap.'}
+    if name=='android_ui_request_vision':
+        from ui_image_gate import request_vision
+        return request_vision(args['image_path'],args['reason'])
     if name=='android_ui_snapshot':return snapshot(adb,screenshot,require_device,args.get('query',''),args.get('limit',40))
     if name=='android_ui_locate':return locate(args['snapshot_id'],args['query'],args.get('field','text'),args.get('match_mode','exact'))
     if name=='android_ui_icon_template':return icon_template(args['snapshot_id'],args['bounds'])

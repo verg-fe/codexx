@@ -60,10 +60,10 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-09-runtime-73'
-APP_VERSION = '2026-10-09-runtime-73'
-WORK_CONTEXT = 93000
-WORK_COMPACT = 87000
+ADAPTER_VERSION = '2026-10-09-runtime-76'
+APP_VERSION = '2026-10-09-runtime-76'
+WORK_CONTEXT = 95000
+WORK_COMPACT = 92000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
 MAX_WORK_CONTEXT = max(WORK_CONTEXT_OPTIONS)*1024
 MEMORY_COMPACT_TARGETS = {76800: 63488, WORK_CONTEXT: WORK_COMPACT}
@@ -81,6 +81,17 @@ functions and line ranges. Do not dump whole repositories, logs, lockfiles or ge
 UI automation on Android and Windows: locate controls in the current accessibility tree first;
 then use known icon templates on CPU; request CPU vision only for unfamiliar/custom-drawn UI.
 Use android_ui_snapshot/locate/icon_find/click for Android and native UI Automation for Windows.
+For Android, do not open screenshots just to learn the page: snapshot/screenshot tools return
+visible text, descriptions and candidate bounds. Read these first; an unlabelled candidate's
+meaning remains unknown. For unfamiliar/custom targets call android_ui_request_vision with
+image_path and reason, then view_image; generic view_image is deferred to controls by default.
+Do not replace control lookup with shell input tap or guessed coordinates.
+For unfamiliar UI symbols, crop only the relevant area with context using android_ui_prepare_vision
+or screen_prepare_vision. Open that returned crop; report normalized coordinates within the crop.
+Use android_ui_map_prepared_point or screen_map_prepared_point to restore original coordinates;
+never add crop offsets mentally. PNG compression keeps retained pixels unchanged, not model cost.
+Templates are optional helpers: bootstrap unknown symbols via controls or one verified vision
+observation, and confirm the UI result before reusing their identity. Similarity alone is not meaning.
 For visual fallback, report normalized coordinates (x,y in [0,1]) relative to image content.
 Never treat a displayed/resized image point as original device coordinates. Use android_ui_map_point
 or screen_map_point; desktop physical capture bounds, monitor origin and click API DPI units must
@@ -287,10 +298,10 @@ def context_for(settings, name):
     return max(MIN_CONTEXT, min(context_limits()[name], int(value)))
 
 def work_context_label(tokens):
-    return '93,000 token' if int(tokens)==93000 else str(int(tokens)//1024)+'K'
+    return f'{int(tokens):,} token' if int(tokens)%1024 else str(int(tokens)//1024)+'K'
 
 def parse_work_context_label(label):
-    return 93000 if label=='93,000 token' else int(label[:-1])*1024
+    return int(label.removesuffix(' token').replace(',','')) if label.endswith(' token') else int(label[:-1])*1024
 
 def compact_for(context):
     return context - max(2048, min(32768, (context // 6 // 1024) * 1024))

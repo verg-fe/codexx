@@ -16,6 +16,7 @@ import urllib.error
 from PIL import Image, ImageOps
 from generation_trace import GenerationTrace
 from vision_history import archive_observed_tool_images
+from ui_image_gate import defer_ui_tool_images
 from history_memory import HistoryMemory, archive_thread_id
 from task_artifacts import TaskArtifacts
 from core import (ROOT, api, load_settings, MODELS, selected_model, context_for, start_model,
@@ -534,7 +535,9 @@ class Handler(BaseHTTPRequestHandler):
                 if route == '/v1/responses':
                     tool_routes,custom_names = tool_response_routes(body.get('tools',[]))
                     body = normalize(body)
+                    deferred_ui_images=defer_ui_tool_images(body)
                     vision_stats=archive_observed_tool_images(body)
+                    vision_stats['deferred_ui_images']=deferred_ui_images
                     try:
                         retained_failures=retain_execution_state(body)
                     except (OSError,ValueError,sqlite3.Error) as error:
@@ -683,6 +686,9 @@ class Handler(BaseHTTPRequestHandler):
                     while block := response.read1(65536):
                         write_chunk(block)
                 if watch and watch.stopped.is_set():raise GuardStopped(watch.reason)
+                terminal=(self.trace.adapter_outcome or self.trace.terminal) if self.trace else None
+                if route=='/v1/responses' and streaming and response.status==200 and self.trace and terminal is None:
+                    raise OSError('Model stream ended without a terminal response event.')
                 self.wfile.write(b'0\r\n\r\n')
                 self.wfile.flush()
                 terminal=(self.trace.adapter_outcome or self.trace.terminal) if self.trace else None
@@ -694,10 +700,12 @@ class Handler(BaseHTTPRequestHandler):
             self.trace_outcome = 'client_disconnected'
             if watch:watch.stop('客户端已断开，后台推理已取消。',notify=False)
         except (GuardStopped,ToolCallFormatError,OSError,http.client.HTTPException) as error:
+            if self.trace:
+                self.trace.diagnostic('stream_exception: '+type(error).__name__+': '+str(error)[:300])
             if isinstance(error,ToolCallFormatError) and watch:
                 watch.stop(str(error),code=error.code)
             self.trace_outcome='guard_stopped' if watch and watch.stopped.is_set() else 'upstream_stream_error'
-            if watch and not watch.stopped.is_set():watch.stop('模型流意外中断，已停止本轮并保留日志。')
+            if watch and not watch.stopped.is_set():watch.stop('模型流意外中断，已停止本轮并保留日志。',code='upstream_stream_error')
             if watch:
                 event=watch.failed_event()
                 if self.trace:self.trace.adapter_terminal(event)

@@ -561,7 +561,7 @@ class App(ctk.CTk):
         work_line=ctk.CTkFrame(options,fg_color='transparent')
         work_line.grid(row=4,column=0,sticky='w',padx=18,pady=8)
         ctk.CTkLabel(work_line,text='工作上下文',text_color=MUTED).pack(side='left',padx=(0,12))
-        self.work_picker=ctk.CTkOptionMenu(work_line,values=['93,000 token']+[f'{k}K' for k in WORK_CONTEXT_OPTIONS],width=140,
+        self.work_picker=ctk.CTkOptionMenu(work_line,values=[work_context_label(WORK_CONTEXT)]+[f'{k}K' for k in WORK_CONTEXT_OPTIONS],width=140,
             command=lambda value:self.preview_context(self.context_slider.get()),fg_color='#303742',button_color='#415b38')
         self.work_picker.pack(side='left')
         self.work_picker.set(work_context_label(self.settings.get('work_context',WORK_CONTEXT)))

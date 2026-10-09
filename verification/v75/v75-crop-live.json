@@ -1,0 +1,26 @@
+{
+  "original_size": [
+    1080,
+    2400
+  ],
+  "encoded_size": [
+    151,
+    235
+  ],
+  "crop": [
+    590,
+    1585,
+    741,
+    1820
+  ],
+  "original_file_bytes": 190103,
+  "cropped_file_bytes": 5128,
+  "pixels_retained": 0.013690200617283951,
+  "compression": "lossless PNG; retained pixels are not resized",
+  "mapping_matches_control_center": true,
+  "device_point": [
+    665,
+    1702
+  ],
+  "no_click_performed": true
+}

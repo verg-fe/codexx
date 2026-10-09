@@ -43,3 +43,4 @@ description: 当任务需要检查或操作实际 Windows 应用界面，或诊�
 视觉回退优先给出图像内容中的归一化点 x,y（0 到 1），用 android_ui_map_point 的 display_width=1、display_height=1 换算到手机原图。若使用缩放图像素坐标，则提供实际显示图宽高，裁剪时还要给原图 crop。已知图样可从原图 bounds 保存模板，再在新 snapshot 用 icon_find 定位；图样相似不等于语义正确，有多个候选时不直接点。
 
 电脑先使用 windows_desktop 的 Snapshot/UIA 和 DisplayInventory。截图回退调用 android_coordinates.screen_map_point，提供真实截图路径和归一化坐标；需要桌面点击坐标时，必须取得截图后端报告的 physical_capture_bounds。负数多屏原点、窗口截图范围、DPI 物理/逻辑坐标要核对。缺少范围时工具只返回图像坐标，不能当作桌面坐标直接点击。点击后用新控件树与截图核验实际结果。
+v75 裁剪视觉：screen_prepare_vision(image_path,crop,physical_capture_bounds) 保留原图、裁剪偏移和真实物理采集边界；无损 PNG 不缩放裁剪内像素。识别裁剪图归一化坐标后调用 screen_map_prepared_point(view_id,x,y)。没有真实采集边界时只返回图像坐标，不能据此猜屏幕点击；DPI 单位按实际点击 API 转换。图标模板仅复用已确认含义与点击结果的图样，分数不能代表语义正确。

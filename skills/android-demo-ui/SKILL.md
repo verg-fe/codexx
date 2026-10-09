@@ -28,6 +28,16 @@ description: 用于 Android App 开发、界面操作与调试、点击回调、
 
 ## 坐标工具与视觉回退
 
+### 默认先读内容，不先读像素（v74）
+
+陌生符号的裁剪回退（v75）：android_ui_prepare_vision(snapshot_id,crop,reason) 将新快照的目标附近裁成无损 PNG，保留原图与偏移，不缩放裁剪内像素。view_image 只打开返回的 image_path。以裁剪图内容为基准给归一化 x,y，用 android_ui_map_prepared_point(view_id,x,y) 获取 snapshot_id 和 device_point，再 android_ui_click 检查当前页面并点击。不要把裁剪图点直接拿去 shell tap。裁剪不能移除判别符号需要的周边信息；找不到区域时可以保留全图，不能猜裁剪边界。
+
+模板并非预先全知：先读文字/描述，陌生符号才进行首次视觉识别；必须核对实际点击结果再将图样作为已确认目标复用。主题/尺寸变化、多个相似图样、低分都应重新确认。分数高也不能证明含义正确。
+
+想知道当前页面有什么，调用 android_ui_snapshot；android_screenshot 也会返回当前控件文字、描述、候选坐标和 snapshot_id。先读清单，不先调用 view_image。未标注控件和自绘区域的含义仍然未知，不能据清单编造图标含义。
+
+控件找不到目标时先匹配已知模板；陌生符号、自绘地图等才调用 android_ui_request_vision(image_path, reason)，说明控件/模板为什么不够，然后用 view_image 打开同一路径。允许有效期 180 秒，绑定原图哈希；更换图片要重新请求。默认手机工具截图经网关转成控件清单，用户直接上传的图片不受此规则影响。不得改用 shell input tap 猜点来绕过控件定位。
+
 定位顺序：当前控件树 → 已知图标的 CPU 图样匹配 → 陌生/自绘控件才调用 CPU 视觉。手机工具使用 android_coordinates MCP（也在新版本 android MCP 中）：android_ui_snapshot、android_ui_locate、android_ui_icon_template、android_ui_icon_find、android_ui_map_point、android_ui_click。文字在 content-desc 中时选择 field=description、match_mode=contains，并核对唯一候选。snapshot 返回原图尺寸、编号图、候选 bounds 和 snapshot_id；点击参数必须使用该次 snapshot_id。页面变化或快照过期时工具会拒绝点击，重新定位。不要绕开工具继续用 shell 猜坐标。
 
 视觉回退优先给出图像内容中的归一化点 x,y（0 到 1），用 android_ui_map_point 的 display_width=1、display_height=1 换算到手机原图。若使用缩放图像素坐标，则提供实际显示图宽高，裁剪时还要给原图 crop。已知图样可从原图 bounds 保存模板，再在新 snapshot 用 icon_find 定位；图样相似不等于语义正确，有多个候选时不直接点。

@@ -1,0 +1,26 @@
+{
+  "original_size": [
+    954,
+    774
+  ],
+  "encoded_size": [
+    91,
+    41
+  ],
+  "crop": [
+    487,
+    93,
+    578,
+    134
+  ],
+  "original_file_bytes": 60571,
+  "cropped_file_bytes": 2139,
+  "compression": "lossless PNG; retained pixels are not resized",
+  "image_point": [
+    532,
+    113
+  ],
+  "physical_click_coordinates_available": false,
+  "source": "previous desktop test capture",
+  "no_click_performed": true
+}

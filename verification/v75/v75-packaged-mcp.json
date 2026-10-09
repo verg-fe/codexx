@@ -1,0 +1,24 @@
+{
+  "packaged_mcp": true,
+  "tools": [
+    "screen_map_point",
+    "screen_prepare_vision",
+    "screen_map_prepared_point",
+    "android_ui_prepare_vision",
+    "android_ui_map_prepared_point",
+    "android_ui_request_vision",
+    "android_ui_snapshot",
+    "android_ui_locate",
+    "android_ui_icon_template",
+    "android_ui_icon_find",
+    "android_ui_map_point",
+    "android_ui_click"
+  ],
+  "snapshot_size": [
+    1080,
+    2400
+  ],
+  "matching_candidate_count": 6,
+  "control_tree_read_success": true,
+  "no_click_performed": true
+}
