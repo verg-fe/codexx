@@ -60,8 +60,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-09-runtime-80'
-APP_VERSION = '2026-10-09-runtime-80'
+ADAPTER_VERSION = '2026-10-10-runtime-81'
+APP_VERSION = '2026-10-10-runtime-81'
 WORK_CONTEXT = 95000
 WORK_COMPACT = 92000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
