@@ -1,5 +1,11 @@
 {
   "version": "v80",
+  "restore_target": "45b05110debfda1f1909a24690957c4e2571a5b4",
+  "retained_updates": [
+    "Delamain MCP integration",
+    "MobileRE Skill",
+    "lookup-only MCP tool directory; all tool schemas remain advertised"
+  ],
   "cache": {
     "directory": "G:\\LocalCodex\\cache",
     "prompt_cache": true,
@@ -13,30 +19,32 @@
     "context": 95000,
     "vision_gpu_offload": false
   },
-  "source": "v76 KV cache flags with v79 additions audited",
+  "restored_v76_behavior": {
+    "app_prompt_history_assembly": true,
+    "gateway_request_construction": true,
+    "model_catalog": true,
+    "v78_adjacent_continue_merge": false,
+    "v78_generated_tail_pruning": false,
+    "v78_long_tool_output_archival": false,
+    "all_mcp_schemas_retained": true
+  },
   "runtime": {
     "adapter_version": "2026-10-09-runtime-80",
-    "kv_hit_rate": "not measured",
-    "slots": "502 backend connection refused",
-    "authenticated_health": "ok"
-  },
-  "audit": {
-    "v79_other": "guarded VRAM unload UI; prefix comparison diagnostics",
-    "prefix_metric": "template token-prefix comparison, not actual llama.cpp KV hits",
-    "v78_inherited_context_changes": [
-      "archive/summarize long historical tool outputs",
-      "merge adjacent bare continue messages",
-      "prune generated reference tails",
-      "searchable/dynamic MCP tool schema selection"
-    ],
-    "v79_direct_kv_change": "ctx-checkpoints 4 -> 16"
+    "authenticated_health": "HTTP 200",
+    "slots": "HTTP 502; inference backend connection refused",
+    "kv_hit_rate": "not measured; inference backend unavailable"
   },
   "package": {
-    "exe": "G:\\LocalCodex-work\\mycodex-repair-20261009\\deploy\\MyCodex-v80-kv-match\\MyCodex\\MyCodex.exe",
-    "sha256": "F41E4DE10176AD447B99E876B9BC77453E8335A25BA5CA85EA4CB1C66F1FE64D"
+    "archive": "MyCodex-v80-v76flow-windows.zip",
+    "bytes": 76973334,
+    "sha256": "cb7f236b158f5bd8b253485c983898029c39cb9c339a9d53ada450c829c8103f",
+    "exe_sha256": "09de769b9727d949aee66a3514112e5091a5b4c14822bc852c20c1357f441134"
   },
   "launcher": {
-    "sha256": "CF11DA7761AF74148B212669C621463051EEB0972DD6966540B211FC41CF16F7",
-    "path": "C:\\Users\\18213\\Desktop\\我的Codex.cmd"
-  }
+    "path": "C:\\Users\\18213\\Desktop\\我的Codex.cmd",
+    "sha256": "c6a2b5e1c8a180fc171317c08257c6341036558748432775e924b46f4e40f442",
+    "target": "G:\\LocalCodex-work\\mycodex-repair-20261009\\deploy\\MyCodex-v80-v76flow\\MyCodex\\MyCodex.exe"
+  },
+  "verified": true,
+  "actual_kv_reuse_verified": false
 }

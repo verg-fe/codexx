@@ -16,9 +16,6 @@ METADATA_FIELDS = ('thread_id', 'model', 'context_limit', 'runtime_context', 'kv
                    'prompt_tokens', 'reasoning_budget', 'media_converted_to_png', 'backend',
                    'retained_execution_failures', 'artifact_task_id')
 METADATA_FIELDS += ('archived_tool_images', 'stale_tool_images', 'pending_tool_images', 'user_images', 'request_started_at')
-METADATA_FIELDS += ('historical_reference_blocks_removed','historical_reference_chars_removed','instruction_chars','tool_schema_chars','tool_count','input_items','input_chars')
-METADATA_FIELDS += ('tool_directory_active','tools_before_directory','tools_after_directory','tool_schema_chars_before_directory','archived_long_outputs','historical_output_chars_removed','merged_continue_messages')
-METADATA_FIELDS += ('text_prefix_previous_available','text_prefix_common_tokens','text_prefix_previous_tokens','text_prefix_image_count','text_prefix_comparison_capped','instructions_sha256','tools_sha256','text_prefix_changed_fields')
 DELTA_CHANNELS = {
     'response.reasoning_text.delta': 'reasoning',
     'response.reasoning_summary_text.delta': 'reasoning_summary',

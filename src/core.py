@@ -21,7 +21,6 @@ import urllib.error
 
 ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
 PROMPT_CACHE_RAM_MIB = 8192
-PROMPT_CACHE_CHECKPOINTS = 4
 PROMPT_CACHE_DIRECTORY = Path(os.environ.get('LOCAL_CODEX_PROMPT_CACHE', r'G:\LocalCodex\cache'))
 
 def _model_directory():
@@ -123,7 +122,7 @@ Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
 
 INSTRUCTIONS += '\n技能按任务需要读取；不要预先注入或罗列整份技能目录。\n'
-INSTRUCTIONS += '\n有 MCP 工具目录时，先读目录类别；需要尚未加载的工具，调用 tool_catalog_search 获取原始名称和参数，再使用原始 MCP。未知参数必须查目录，不能用猜测的调用或任意 shell 命令替代。历史输出的 full_output_path 保存完整日志，诊断需要时通过 local_read_text 分段读取。\n'
+INSTRUCTIONS += '\nMCP tool catalog searches are optional; keep every original MCP schema available and do not filter tools by request.\n'
 INSTRUCTIONS += '''\nMCP call contracts: Photoslop accepts source and output paths only under G:\\LocalCodex\\image-jobs; when an uploaded or generated input is elsewhere, copy it into that folder before calling document_info/edit_image. Shotcut shotcut_trim requires output_name to be a new basename ending in .mp4 (no directory component); outputs go under G:\\LocalCodex\\video-jobs and must not overwrite. For Windows Desktop WaitFor, always include window_name when waiting for a particular window or its controls; active_window requires window_name (or text), text_exists requires text, and element waits should include both text and window_name when scoped. Use a short finite timeout and verify the observed result before continuing. These are call requirements, not reasons to change valid MCP implementations.\n'''
 INSTRUCTIONS += '''
 Task execution stages (use these to decide your NEXT ACTION, do not endlessly restate a plan):
@@ -684,7 +683,6 @@ def prompt_cache_policy_matches(current):
     except (OSError,RuntimeError,TypeError):
         return False
     return (current.get('prompt_cache_ram_mib')==PROMPT_CACHE_RAM_MIB
-            and current.get('prompt_cache_checkpoints')==PROMPT_CACHE_CHECKPOINTS
             and current.get('prompt_cache_idle_slots') is True
             and current.get('prompt_cache_enabled') is True
             and recorded==expected)
@@ -707,7 +705,7 @@ def model_args(name, context, settings=None):
             '--alias', name, '--host', '127.0.0.1', '--port', '8080',
             '--api-key', settings['api_key'], '-c', str(context),
             '-np', '1', '-fa', 'on', '-ctk', settings.get('kv_cache_type','q4_0'), '-ctv', settings.get('kv_cache_type','q4_0'),
-             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context, settings)), '--ctx-checkpoints', str(PROMPT_CACHE_CHECKPOINTS),
+             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context, settings)), '--ctx-checkpoints', '4',
             '--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--cache-idle-slots',
             '-b', '512', '-ub', '128', '-t', '2' if not settings.get('cpu_offload',False) and cache_location=='gpu' else '6', '--jinja',
             '--chat-template-kwargs', json.dumps({'enable_thinking':True,'preserve_thinking':True,'reasoning_effort':settings.get('reasoning_effort','xhigh')}),
@@ -994,7 +992,6 @@ def _start_model(name, context, wait, ceiling=None, settings=None):
         'vision_gpu_offload':settings.get('vision_gpu_offload',True),
         'kv_cache_type':settings.get('kv_cache_type','q4_0'),
         'prompt_cache_enabled':True,'prompt_cache_ram_mib':PROMPT_CACHE_RAM_MIB,
-        'prompt_cache_checkpoints':PROMPT_CACHE_CHECKPOINTS,
         'prompt_cache_idle_slots':True,'prompt_cache_directory':str(PROMPT_CACHE_DIRECTORY),
         'isolated_console':True,'chat_template_policy':desired_template['policy'],
         'chat_template_sha256':desired_template.get('sha256'),
