@@ -24,6 +24,8 @@ def config_fragment(root):
             'startup_timeout_sec = 60\ntool_timeout_sec = 45\n'
             'enabled = true\nrequired = false\n'
             f'enabled_tools = {json.dumps(TOOLS)}\n'
+            '\n# WaitFor usage contract: always pass window_name when targeting a particular window; '
+            'active_window requires window_name or text, and element waits should be scoped with window_name.\n'
             '\n[mcp_servers.windows_desktop.tools.DisplayInventory]\napproval_mode = "approve"\n'
             '\n[mcp_servers.windows_desktop.tools.Screenshot]\napproval_mode = "approve"\n'
             '\n[mcp_servers.windows_desktop.tools.Snapshot]\napproval_mode = "approve"\n'

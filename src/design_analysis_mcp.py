@@ -37,7 +37,7 @@ def stl_inspect(path: str, expected_unit: str = '', expected_dimensions_mm: list
             raise ValueError('expected_dimensions_mm 必须是 3 个正数。')
         if valid_unit and units.get('unit') == 'mm':
             expected_match = all(abs(float(extents[i]) - float(expected_dimensions_mm[i])) <= max(0.05, float(expected_dimensions_mm[i]) * 0.002) for i in range(3))
-    degenerate_count=int(len(mesh.faces)-len(mesh.nondegenerate_faces()))
+    degenerate_count=int((~mesh.nondegenerate_faces()).sum())
     report = {
         'path': str(file), 'bytes': file.stat().st_size,
         'faces': int(len(mesh.faces)), 'vertices': int(len(mesh.vertices)),
@@ -54,7 +54,9 @@ def stl_inspect(path: str, expected_unit: str = '', expected_dimensions_mm: list
         'physical_scale_status': 'verified_from_sidecar' if valid_unit else 'unknown_stl_has_no_unit_metadata',
         'checked_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
     }
-    report['printable_mesh_basics_pass'] = report['is_watertight'] and report['is_winding_consistent'] and report['body_count'] == 1
+    report['printable_mesh_basics_pass'] = (report['is_watertight'] and report['is_winding_consistent']
+        and report['body_count'] == 1 and degenerate_count == 0
+        and report['expected_unit_match'] is not False and expected_match is not False)
     output = file.with_suffix('.inspection.json')
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     report['report_path'] = str(output)

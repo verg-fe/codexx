@@ -1,3 +1,16 @@
+# codexx / 我的 Codex v69
+
+## v69：提示前缀复用与 MCP 桌面/手机应用发布
+
+- Windows 桌面包：MyCodex v69；MCP 连接器、内置技能和手机 PWA 一并打包。
+- 源码位于 src/；ScopeWeaver 源码只读技能和 VMware 只读技能也同步到仓库 skills/。
+- v69 将逐轮变化的记忆、项目、任务产物和技能清单放到当前输入尾部，保持系统提示前缀稳定，便于推理服务复用缓存；界面显示处理 token、KV 复用 token 与命中率，无法取得缓存统计时显示不可用。
+- 发布记录与完整 SHA256：见 docs/工作台改进-v69.md。
+- 发布包下载：[MyCodex-v69-windows.zip](https://github.com/verg-fe/codexx/releases/download/v69-20261009/MyCodex-v69-windows.zip)。
+- 不包含模型权重、账号凭据、个人会话/日志和本机配置。Shotcut、Blender、FreeCAD、IDA Pro、VMware 等外部程序不随包分发；对应的 MCP 连接器和技能包含在源码与桌面包中。
+- 构建日志记录构建成功；本次没有运行测试套件。运行中的 v68 未被替换，桌面启动器现已指向 G 盘 v69。
+
+---
 # codexx / 我的 Codex v53
 
 ## 工作台工具与模型管理

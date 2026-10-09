@@ -6,7 +6,7 @@ from tool_results import classify_output
 
 LINE_BYTES=1024*1024
 MAX_PENDING=128
-CLASSIFIER_VERSION=5
+CLASSIFIER_VERSION=6
 SEMANTIC_ERROR=re.compile(
     r'^\s*(?:The property [^\n]+ cannot be found on this object\.|'
     r'Traceback \(most recent call last\):|ParserError\s*:|'
@@ -110,10 +110,10 @@ class ExecutionJournal:
             db.execute('UPDATE execution_sources SET offset=?,line=?,state=? WHERE path=?',
                 (offset,line,json.dumps(state,ensure_ascii=False),str(path)))
             turn=state.get('turn_id')
-            failures=db.execute("SELECT e.* FROM execution_results e WHERE e.thread_id=? AND e.turn_id IS ? AND e.status='failed' "
+            failures=db.execute("SELECT e.* FROM execution_results e WHERE e.thread_id=? AND e.turn_id IS ? AND (e.status='failed' OR e.target_validation='reported_failure') "
                 "AND NOT EXISTS(SELECT 1 FROM execution_results s WHERE s.thread_id=e.thread_id AND s.action_hash=e.action_hash "
-                "AND s.status='succeeded' AND s.id>e.id) ORDER BY e.id DESC LIMIT 24",(thread_id,turn)).fetchall()
-            successes=db.execute("SELECT * FROM execution_results WHERE thread_id=? AND turn_id IS ? AND status='succeeded' "
+                "AND s.status='succeeded' AND s.target_validation!='reported_failure' AND s.id>e.id) ORDER BY e.id DESC LIMIT 24",(thread_id,turn)).fetchall()
+            successes=db.execute("SELECT * FROM execution_results WHERE thread_id=? AND turn_id IS ? AND status='succeeded' AND target_validation!='reported_failure' "
                 'ORDER BY id DESC LIMIT 2',(thread_id,turn)).fetchall()
             diagnostics=db.execute("SELECT * FROM execution_results WHERE thread_id=? AND turn_id IS ? "
                 "AND diagnostic_findings!='[]' ORDER BY id DESC LIMIT 6",(thread_id,turn)).fetchall()

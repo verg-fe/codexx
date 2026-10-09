@@ -50,11 +50,14 @@ def public_url(url):
 class NetworkTools:
     def __init__(self, proxy_url=None):
         route = proxy_url if proxy_url is not None else os.environ.get('LOCAL_CODEX_PROXY_URL','direct')
-        self.proxy_url = None if route in ('direct','',None) else route
+        self.proxy_unavailable = route=='unavailable'
+        self.proxy_url = None if route in ('direct','',None,'unavailable') else route
         self.cache = {}
         self.workers = ThreadPoolExecutor(max_workers=4)
 
     def fetch(self, url, seconds=12, max_bytes=1500000):
+        if self.proxy_unavailable:
+            raise RuntimeError('本地代理隧道未连接；为避免绕过代理，公开网页检索暂不可用。')
         public_url(url)
         handler = urllib.request.ProxyHandler({'http':self.proxy_url,'https':self.proxy_url} if self.proxy_url else {})
         class PublicRedirect(urllib.request.HTTPRedirectHandler):

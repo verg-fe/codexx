@@ -58,6 +58,8 @@ class SkillMemory:
         self.root = Path(root)
         self.skills = self.root / 'codex-home' / 'skills'
         self.skills.mkdir(parents=True, exist_ok=True)
+        bundled = Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'skills'
+        self.bundled_skills = bundled.resolve()
 
     def path(self, name):
         if not isinstance(name, str) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', name) or len(name) > 63:
@@ -102,7 +104,12 @@ class SkillMemory:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _read(self, name):
-        path = self.path(name)
+        user_path = self.path(name)
+        path = user_path if user_path.is_file() else self.bundled_skills / name / 'SKILL.md'
+        if not path.resolve().is_relative_to(self.bundled_skills) and not path.resolve().is_relative_to(self.skills.resolve()):
+            raise ValueError('技能路径必须位于用户技能库或程序内置技能库。')
+        if not path.is_file():
+            raise FileNotFoundError('找不到该技能。')
         text, encoding = read_local_text(path)
         description, body = parse_skill(text)
         metadata_path = path.parent / 'local-resources.json'
@@ -144,11 +151,17 @@ class SkillMemory:
             tokens.update(word[i:i + 2] for i in range(max(1, len(word) - 1)))
         rows = []
         with self.locked():
-            for directory in self.skills.iterdir():
-                if not directory.is_dir() or directory.name.startswith('.'):
-                    continue
+            names=set()
+            for skill_root in (self.skills,self.bundled_skills):
                 try:
-                    row = self._read(directory.name)
+                    names.update(directory.name for directory in skill_root.iterdir()
+                                 if directory.is_dir() and not directory.name.startswith('.')
+                                 and (directory/'SKILL.md').is_file())
+                except OSError:
+                    continue
+            for name in sorted(names):
+                try:
+                    row = self._read(name)
                     label = (row['name'] + ' ' + row['description']).casefold()
                     body = row['body'].casefold()
                     score = sum(4 if term in label else 1 for term in tokens if term in label or term in body)
@@ -319,17 +332,7 @@ def call_tool(root, name, arguments):
     return handlers[name](**arguments)
 
 
-INSTRUCTIONS = '''\nYou may create and update persistent skills at any point using skill_save.
-Before downloading or reinstalling a dependency, use skill_search for relevant setup experience,
-then skill_read and check the recorded files/version. Reuse compatible existing SDKs, Gradle,
-archives and tools across conversations; a new session folder does not require new dependencies.
-After a verified fix, useful setup or reusable summary, save the method, local paths, versions,
-observed evidence and pitfalls as a concise skill. Merge into a relevant existing skill using
-its current revision instead of creating duplicates. Keep unresolved guesses explicitly marked.
-Use skill_read/local_read_text for Chinese skill or text files, and local_run_utf8 for short
-PowerShell text commands. Use byte-preserving Python subprocess capture for PNG/binary data.
-When asked to configure or upgrade your own environment, read self-configure-tools and carry out the setup using real tools. Preserve a rollback and verify the installed version and actual behavior before saving its resource record.
-Skills are available across sessions; their resource locations must be checked before reuse.\n'''
+INSTRUCTIONS = '''\n技能按需使用：只搜索并读取与当前任务直接相关的技能，不注入完整目录。复用前核对技能路径和版本；执行安装或配置时保留回退并验证实际结果。写入技能时保存简明步骤、路径、版本和证据，合并到现有技能并标出未验证内容。\n'''
 
 
 def install_bundled_skills(root, bundle):

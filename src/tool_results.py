@@ -47,7 +47,7 @@ def _walk_errors(value, depth=0):
         if value.get("isError") is True:
             found.append("MCP tool returned isError=true")
         for key, child in value.items():
-            if key in ("content", "output", "result", "structuredContent"):
+            if key in ("text", "input_text", "content", "output", "result", "structuredContent"):
                 found.extend(_walk_errors(child, depth + 1))
     elif isinstance(value, list):
         for child in value:
@@ -55,9 +55,29 @@ def _walk_errors(value, depth=0):
     return found
 
 
+def _execution_records(value, depth=0):
+    if depth > 8:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    if isinstance(value, list):
+        return [record for item in value for record in _execution_records(item, depth + 1)]
+    if not isinstance(value, dict):
+        return []
+    records = [value]
+    for key in ("text", "input_text", "content", "output", "result", "structuredContent"):
+        if key in value:
+            records.extend(_execution_records(value[key], depth + 1))
+    return records
+
+
 def classify_output(output):
     text = flatten_output(output)
     clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    clean = re.sub(r'\r+\n', '\n', clean).replace('\r', '\n')
     findings = []
     for pattern, code in (
         (r"(?m)^\s*Traceback \(most recent call last\):", "python_traceback"),
@@ -67,6 +87,10 @@ def classify_output(output):
         (r"(?im)^.*(?:Exception|Error):\s*[^\n]+", "observed_error_text"),
         (r"(?im)^.*\b(?:crashed|crash|unknown authority)\b[^\n]*", "observed_runtime_error_text"),
         (r"(?im)^.*(?:BUILD FAILED|Build FAILED|Compilation failed).*$", "build_failure_text"),
+        (r"(?im)^\s*(?:\|\s*)?Cannot find path\s+[^\n]+", "missing_path"),
+        (r"(?im)^.*\.(?:java|kt):\d+:\s*error:\s*[^\n]+", "compiler_error"),
+        (r"(?im)^\s*Error in [^\n]+\.class[^\n]*", "dex_error"),
+        (r"(?im)^\s*mode=\w+\s+ok=\d+\s+err=[1-9]\d*\s*$", "batch_failure_summary"),
     ):
         match = re.search(pattern, clean)
         if match:
@@ -79,17 +103,21 @@ def classify_output(output):
                         for item in transport_errors if item not in {f.get("excerpt") for f in findings})
     else:
         exit_code = None
-        if isinstance(output, dict):
+        records = _execution_records(output)
+        codes = []
+        for record in records:
             for key in ("exit_code", "exitCode", "returncode", "return_code"):
-                if isinstance(output.get(key), int):
-                    exit_code = output[key]
+                if type(record.get(key)) is int:
+                    codes.append(record[key])
                     break
+        if codes:
+            exit_code = next((code for code in codes if code != 0), 0)
         code_match = re.search(r"(?:Process exited with code|Exit code:)\s*(-?\d+)\b", clean)
         if exit_code is None and code_match:
             exit_code = int(code_match.group(1))
         if exit_code is not None:
             status = "succeeded" if exit_code == 0 else "failed"
-        elif isinstance(output, dict) and output.get("isError") is False:
+        elif any(record.get("isError") is False for record in records):
             status = "succeeded"
         elif clean.startswith("Success. Updated the following files:"):
             status = "succeeded"
@@ -98,10 +126,11 @@ def classify_output(output):
 
     target = "not_checked"
     evidence = re.search(r"(?im)^.*\b(?:BUILD SUCCESSFUL|Build succeeded|Compilation successful)\b.*$", clean)
-    if evidence:
-        target = "reported_success"
-    elif any(item["code"] == "build_failure_text" for item in findings):
+    if any(item["code"] in ("build_failure_text", "compiler_error", "dex_error", "batch_failure_summary")
+           for item in findings):
         target = "reported_failure"
+    elif evidence:
+        target = "reported_success"
     elif re.search(r"(?im)^\s*Success\s*$", clean) and re.search(r"(?i)adb(?:\.exe)?\s+install", clean):
         target = "reported_success"
 

@@ -26,6 +26,9 @@ class Release53Checks(unittest.TestCase):
             models_dir = root / 'models'
             models_dir.mkdir()
             rows = []
+            runtime = root / 'llama-server.exe'
+            runtime.write_bytes(b'test runtime')
+            from model_validation import identity
             for model_id, status in (('old-model', 'runtime_validated'),
                                      ('new-model', 'runtime_validated'),
                                      ('unverified-model', 'local_unverified')):
@@ -33,7 +36,9 @@ class Release53Checks(unittest.TestCase):
                 model_file.write_bytes(b'x' * (1024 * 1024))
                 rows.append({'id': model_id, 'display_name': model_id, 'filename': model_file.name,
                              'path': str(model_file), 'size_bytes': model_file.stat().st_size,
-                             'status': status, 'context_limit': 32768, 'default_context': 16384})
+                             'status': status, 'context_limit': 32768, 'default_context': 16384,
+                             'validation_evidence': {'weight': identity(model_file), 'runtime': identity(runtime),
+                                 'probes': {'chinese': {'passed': True}}}})
             catalog = ModelCatalog(root, models_dir)
             catalog.write({'schema_version': 1, 'models': rows})
             with patch.object(local_mcp_servers, 'ROOT', root), patch.object(local_mcp_servers, '_catalog', return_value=catalog):

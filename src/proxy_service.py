@@ -127,11 +127,18 @@ class ProxyLease:
             self.close()
             raise
 
-    def apply_environment(self, env: dict) -> dict:
+    def apply_environment(self, env: dict, allow_unavailable=False) -> dict:
         if not self.enabled:
             env['LOCAL_CODEX_PROXY_URL'] = 'direct'
             return env
         if not self.active:
+            if allow_unavailable:
+                for key in PROXY_KEYS:
+                    env.pop(key, None)
+                # Keep public web tools fail-closed while allowing the local
+                # app-server and local MCPs to run without the tunnel.
+                env['LOCAL_CODEX_PROXY_URL'] = 'unavailable'
+                return env
             raise RuntimeError('VLESS 代理已启用但未运行，请重新应用代理设置。')
         for key in PROXY_KEYS:
             env[key] = self.url

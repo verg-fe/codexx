@@ -15,10 +15,13 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 import urllib.request
 import urllib.error
 
 ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
+PROMPT_CACHE_RAM_MIB = 8192
+PROMPT_CACHE_DIRECTORY = Path(os.environ.get('LOCAL_CODEX_PROMPT_CACHE', r'G:\LocalCodex\cache'))
 
 def _model_directory():
     try:
@@ -57,8 +60,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-08-runtime-53'
-APP_VERSION = '2026-10-08-runtime-53'
+ADAPTER_VERSION = '2026-10-09-runtime-69'
+APP_VERSION = '2026-10-09-runtime-69'
 WORK_CONTEXT = 93000
 WORK_COMPACT = 87000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -68,7 +71,7 @@ HISTORY_MODES = {'memory':'完整历史留存＋按需读取', 'full':'完整上
 PERFORMANCE_MODES = {'standard':'标准调度', 'max':'极致效能 · 不超频'}
 DECODING_MODES = {'none':'常规输出', 'draft-mtp':'Jack MTP · 主模型验证'}
 
-INSTRUCTIONS = '''You are the user's personal local coding assistant, powered by a local Qwen3.8-27B model.
+INSTRUCTIONS = '''You are the user's personal local coding assistant, powered by the selected local model.
 Work in the chosen project directory. Respond in Chinese unless asked otherwise. Complete tasks
 using the available tools; do not invent command outputs or claim unverified success.
 Keep internal checks brief. For file or artifact tasks, use tools after a short plan rather
@@ -100,7 +103,39 @@ a command that failed in Windows. Never reuse made-up write_stdin session IDs.
 Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
 
-INSTRUCTIONS += '\nFor software feature, UI, automation, or repair requests, load the wish-to-result skill at D:/LocalCodex/codex-home/skills/wish-to-result/SKILL.md when applicable. For Android App development and UI tasks, also load D:/LocalCodex/codex-home/skills/android-demo-ui/SKILL.md. Load relevant references only as needed. Skills provide reusable task methods.\n'
+INSTRUCTIONS += '\n技能按任务需要读取；不要预先注入或罗列整份技能目录。\n'
+INSTRUCTIONS += '''\nMCP call contracts: Photoslop accepts source and output paths only under G:\\LocalCodex\\image-jobs; when an uploaded or generated input is elsewhere, copy it into that folder before calling document_info/edit_image. Shotcut shotcut_trim requires output_name to be a new basename ending in .mp4 (no directory component); outputs go under G:\\LocalCodex\\video-jobs and must not overwrite. For Windows Desktop WaitFor, always include window_name when waiting for a particular window or its controls; active_window requires window_name (or text), text_exists requires text, and element waits should include both text and window_name when scoped. Use a short finite timeout and verify the observed result before continuing. These are call requirements, not reasons to change valid MCP implementations.\n'''
+INSTRUCTIONS += '''
+Task execution stages (use these to decide your NEXT ACTION, do not endlessly restate a plan):
+Build/path diagnostics: verify a remembered temporary output path still exists before reading it; otherwise
+use history_read by recorded ID or rediscover the project file. Never claim a missing file was modified.
+PowerShell ErrorActionPreference does not reliably propagate native compiler failure: check LASTEXITCODE
+immediately after javac/d8/aapt/signing and stop on nonzero. Require fresh nonempty expected artifacts before
+BUILD OK; do not package a failed build. Preserve stdout/stderr, full cause, version, command and error line.
+For an internal compiler exception, make a minimal reproduction with supported target/version and official
+documentation before speculative class-metadata stripping. If every probe input fails, validate the probe on
+a known-good fixture first. Use literal Windows paths with dollar signs. Invoke longer diagnostic scripts
+from UTF-8 files instead of nested shell quoting. Preserve unresolved stage errors through compaction.
+1. Inspect: identify the exact requested app/project/device and current files/status. Check the actual installation,
+   PID/port and applicable instructions. Reuse verified current evidence; do not repeat unchanged draft reads.
+2. Select: discover real tool names and schemas. Use source/error lines for build problems, official API material
+   for unfamiliar APIs, device-specific ADB trees/PNG/logcat for Android, and connected CAD/media tools for design.
+3. Execute: make a small concrete change or perform the authorized operation. Poll background jobs by returned ID.
+   A queued job, downloaded file, successful command or healthy process is NOT a completed user outcome.
+4. Validate: inspect actual output/artifacts, run the relevant complete workflow, and test meaningful failure,
+   cancellation, restart and rollback paths. For model upgrades, use model_validate then model_validation_status,
+   require actual Chinese/native-tool/needed-vision evidence, then model_activate only while idle.
+5. Repair: on failure preserve the exact reason, inspect the responsible source/API, make the smallest repair,
+   then rerun the failed workflow. Keep unresolved steps in a concise pending list. Change approach after two
+   repeated failures instead of repeatedly guessing commands or producing another plan.
+6. Finish or wait: report completion only with the output path and actual behavior evidence. If the user must
+   install software or log in, name that concrete dependency and continue independent authorized work.
+   Do not claim every possible environment is error-free; identify what was tested and what remains unverified.
+Media tools: use the Shotcut MCP to inspect local media and export CPU MP4 clips; confirm the output file.
+The Photoshop and Premiere MCP connections were removed. Photoslop is a separate lightweight image editor.
+voice_list and voice_synthesize generate a CPU WAV; poll voice_job_status and verify nonzero duration. Do not upload media to a cloud provider.
+Keep the user's active task running while a diagnostic or background follow-up is observing it.
+'''
 from skill_memory import INSTRUCTIONS as LEARNING_INSTRUCTIONS
 INSTRUCTIONS += LEARNING_INSTRUCTIONS
 
@@ -354,7 +389,13 @@ def prepare(settings=None):
         settings['thinking_profile_version']=38
     from session_workspaces import DEFAULT_WORKSPACE_ROOT
     settings['generation_guard']=guard_options(settings)
-    settings.setdefault('session_workspace_root',DEFAULT_WORKSPACE_ROOT)
+    workspace_root=Path(str(settings.get('session_workspace_root') or DEFAULT_WORKSPACE_ROOT)).expanduser()
+    try:
+        workspace_on_g=workspace_root.resolve().drive.upper()=='G:'
+    except OSError:
+        workspace_on_g=False
+    if not workspace_on_g:
+        settings['session_workspace_root']=DEFAULT_WORKSPACE_ROOT
     if settings.get('guard_migration_version',0)<37:
         # The old forced XML checklist encouraged the observed endless rehearsal.
         if settings.get('directive_mode','legacy')=='legacy':
@@ -408,7 +449,7 @@ def prepare(settings=None):
         'input_modalities': ['text', 'image'] if model_supports_vision(name) else ['text'], 'supports_reasoning_summary_parameter': False,
         'supports_search_tool': False, 'use_responses_lite': False,
         'supports_reasoning_effort_updates': False, 'tool_mode': 'direct',
-        'include_apps_usage_instructions': False, 'include_skills_usage_instructions': True,
+        'include_apps_usage_instructions': False, 'include_skills_usage_instructions': False,
         'include_plugin_usage_instructions': False,
     } for name in MODELS]}
     (ROOT / 'codex-model-catalog.json').write_text(json.dumps(catalog, indent=2), encoding='utf-8')
@@ -470,14 +511,35 @@ sandbox = "unelevated"
     else:
         local_mcp_command=sys.executable
         local_mcp_args=lambda service:[str(Path(__file__).parent/'local_mcp_servers.py'),service]
-    for service in ('model-manager','android','design-control'):
+    local_services=['model-manager','android','design-control','voice']
+    if Path(r'G:\LocalCodex-work\scopeweaver-review-20261009\README.md').is_file():
+        local_services.append('scopeweaver-source')
+    if Path(r'G:\VMware\vmrun.exe').is_file():
+        local_services.append('vmware')
+    for service in local_services:
         config+='\n[mcp_servers.'+service.replace('-','_')+']\ncommand = '+json.dumps(local_mcp_command)+'\nargs = '+json.dumps(local_mcp_args(service))+'\nstartup_timeout_sec = 20\ntool_timeout_sec = 300\nrequired = false\n'
     for tool in ('model_download','model_download_cancel','model_register','model_activate','model_rollback'):
         config += f'\n[mcp_servers.model_manager.tools.{tool}]\napproval_mode = "approve"\n'
-    for tool in ('android_install_apks','android_launch'):
-        config += f'\n[mcp_servers.android.tools.{tool}]\napproval_mode = "approve"\n'
+    for tool in ('voice_synthesize', 'voice_job_cancel'):
+        config += f'\n[mcp_servers.voice.tools.{tool}]\napproval_mode = "approve"\n'
+    # APK install is explicitly automatic at the user's request, but the MCP still
+    # requires an exact package name and expected signing-certificate SHA256.
+    # Launching an installed application remains an interactive action.
+    config += '\n[mcp_servers.android.tools.android_launch]\napproval_mode = "approve"\n'
     for tool in ('blender_start','blender_stop','freecad_start','freecad_stop'):
         config += f'\n[mcp_servers.design_control.tools.{tool}]\napproval_mode = "approve"\n'
+    image_python=Path(r'G:\LocalCodex\tools\photoslop-mcp-venv\Scripts\python.exe')
+    image_adapter=Path(r'G:\LocalCodex\tools\photoslop_huihui_mcp.py')
+    if image_python.is_file() and image_adapter.is_file():
+        config+='\n[mcp_servers.photoslop]\ncommand = '+json.dumps(str(image_python))+'\nargs = '+json.dumps([str(image_adapter),'--root',r'G:\LocalCodex\image-jobs'])+'\nstartup_timeout_sec = 30\ntool_timeout_sec = 300\nrequired = false\n'
+        config+='\n[mcp_servers.photoslop.env]\nPYTHONUTF8 = "1"\nQT_QPA_PLATFORM = "offscreen"\nQT_OPENGL = "software"\nQT_QUICK_BACKEND = "software"\n'
+        config+='\n[mcp_servers.photoslop.tools.edit_image]\napproval_mode = "approve"\n'
+    shotcut_python=Path(r'G:\LocalCodex\tools\photoslop-mcp-venv\Scripts\python.exe')
+    shotcut_adapter=Path(r'G:\LocalCodex\tools\shotcut_huihui_mcp.py')
+    if shotcut_python.is_file() and shotcut_adapter.is_file():
+        config+='\n[mcp_servers.shotcut]\ncommand = '+json.dumps(str(shotcut_python))+'\nargs = '+json.dumps([str(shotcut_adapter),'--output-root',r'G:\LocalCodex\video-jobs'])+'\nstartup_timeout_sec = 30\ntool_timeout_sec = 1300\nrequired = false\n'
+        config+='\n[mcp_servers.shotcut.env]\nPYTHONUTF8 = "1"\nPYTHONIOENCODING = "utf-8"\n'
+        config+='\n[mcp_servers.shotcut.tools.shotcut_trim]\napproval_mode = "approve"\n'
     blender_mcp=Path(r'G:\LocalCodex\tools\design-mcp-venv\Scripts\mcp-for-blender.exe')
     if blender_mcp.is_file():
         config+='\n[mcp_servers.blender]\ncommand = '+json.dumps(str(blender_mcp))+'\nargs = ["--host", "127.0.0.1", "--port", "9876"]\nstartup_timeout_sec = 20\ntool_timeout_sec = 300\nrequired = false\n'
@@ -504,10 +566,7 @@ sandbox = "unelevated"
             config += f'\n[mcp_servers.ida_local.tools.{tool}]\napproval_mode = "approve"\n'
     (ROOT / 'codex-home' / 'config.toml').write_text(config, encoding='utf-8')
     # Named profiles remain available in both the private and user's Codex home.
-    home = Path.home() / '.codex'
     profile_homes=[ROOT / 'codex-home']
-    if 'LOCAL_CODEX_ROOT' not in os.environ and home.is_dir():
-        profile_homes.append(home)
     for profile_home in profile_homes:
         for name, profile in [(MODEL, 'jack-local'), (HUIHUI_MODEL, 'huihui-local'), (HUIHUI_IQ3S_MODEL, 'huihui-iq3s-local')]:
             profile_config = config.replace(f'model = "{settings["model"]}"', f'model = "{name}"', 1)
@@ -515,6 +574,52 @@ sandbox = "unelevated"
             profile_config = profile_config.replace(f'model_auto_compact_token_limit = {working_compact}', f'model_auto_compact_token_limit = {engine_limits(settings,name)[1]}', 1)
             (profile_home / (profile + '.config.toml')).write_text(profile_config, encoding='utf-8')
     return settings
+
+
+def mcp_skill_index(prompt='', root=None):
+    """Return only the configured MCP capabilities relevant to this instruction."""
+    config_path=Path(root or ROOT)/'codex-home'/'config.toml'
+    try:
+        with config_path.open('rb') as stream:
+            servers=tomllib.load(stream).get('mcp_servers',{})
+    except (OSError,ValueError,tomllib.TOMLDecodeError):
+        servers={}
+    labels={
+        'local_history':'本地技能/历史', 'web_research':'公开网页检索',
+        'windows_desktop':'Windows桌面', 'model_manager':'模型管理',
+        'android':'Android设备', 'design_control':'Blender/FreeCAD控制',
+        'voice':'中文语音', 'photoslop':'CPU图片处理', 'shotcut':'CPU视频剪辑',
+        'blender':'Blender建模', 'freecad':'FreeCAD建模',
+        'design_analysis':'STL与设计分析', 'ida_local':'IDA只读分析',
+        'scopeweaver_source':'ScopeWeaver只读源码审查',
+        'vmware':'VMware只读状态',
+    }
+    active={name for name,value in servers.items() if isinstance(value,dict)}
+    if not active:
+        return '本轮技能索引：暂未发现已配置的 MCP 服务。'
+    text=str(prompt or '').lower()
+    groups={
+        'windows_desktop':('窗口','桌面','点击','键盘','鼠标','界面','computer use','ui','screen'),
+        'android':('安卓','android','手机设备','adb','截图','安装应用'),
+        'photoslop':('图片','照片','抠图','裁剪','图像','png','jpeg','webp'),
+        'shotcut':('视频','剪辑','shotcut','mp4','转码','字幕'),
+        'voice':('语音','配音','wav','朗读','转写','录音'),
+        'blender':('blender','网格','渲染','场景'),
+        'freecad':('freecad','cad','stl','step','零件','几何'),
+        'design_analysis':('stl','设计分析','网格检查','模型检查'),
+        'design_control':('blender','freecad','cad','建模','设计软件'),
+        'model_manager':('模型','显存','上下文','推理','思考模式'),
+        'web_research':('搜索网页','网上查','新闻','来源','网页检索','实时信息'),
+        'local_history':('技能','历史','会话记录','备忘录'),
+        'ida_local':('ida','反编译','二进制分析','函数地址'),
+        'scopeweaver_source':('scopeweaver','scope weaver','源码审查 scopeweaver','ScopeWeaver源码'),
+        'vmware':('vmware','虚拟机','vmx','vmrun'),
+    }
+    selected={name for name,words in groups.items() if name in active and any(word in text for word in words)}
+    if not selected:
+        return '本轮技能索引：按需查看已连接工具目录；仅调用与本任务相关的工具。'
+    items='；'.join(f'{name}（{labels.get(name,"MCP工具")}）' for name in sorted(selected))
+    return '本轮相关技能（仅列匹配项；参数以工具目录为准）：'+items+'。'
 
 
 def api(path, body=None, timeout=5):
@@ -549,10 +654,22 @@ def server_ready():
     except (OSError, ValueError):
         return False
 
-def model_args(name, context):
+def prompt_cache_policy_matches(current):
+    """Do not silently keep an older server whose prompt-cache policy is disabled."""
+    try:
+        recorded=Path(current.get('prompt_cache_directory','')).resolve()
+        expected=PROMPT_CACHE_DIRECTORY.resolve()
+    except (OSError,RuntimeError,TypeError):
+        return False
+    return (current.get('prompt_cache_ram_mib')==PROMPT_CACHE_RAM_MIB
+            and current.get('prompt_cache_idle_slots') is True
+            and current.get('prompt_cache_enabled') is True
+            and recorded==expected)
+
+def model_args(name, context, settings=None):
     if name not in MODELS or not MIN_CONTEXT <= context <= THEORETICAL_CONTEXT:
         raise ValueError('模型或上下文参数不受支持。')
-    settings = load_settings()
+    settings = load_settings() if settings is None else settings
     backend = selected_backend(settings)
     if backend=='moe4all':
         from moe4all_backend import arguments, validate
@@ -561,20 +678,21 @@ def model_args(name, context):
                  emotion_state(ROOT,model_file(name),settings),selected_decoding(settings,name))
         return arguments(ROOT,runtime_executable(backend),settings,model_file(name),
                          vision_file(settings,name) if configured_vision(name,settings) else None,context)
+    PROMPT_CACHE_DIRECTORY.mkdir(parents=True,exist_ok=True)
     cache_location=kv_cache_location(context,settings)
     args = [str(runtime_executable(backend)), '-m', str(model_file(name)),
             '--alias', name, '--host', '127.0.0.1', '--port', '8080',
             '--api-key', settings['api_key'], '-c', str(context),
             '-np', '1', '-fa', 'on', '-ctk', settings.get('kv_cache_type','q4_0'), '-ctv', settings.get('kv_cache_type','q4_0'),
-            '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context)), '--ctx-checkpoints', '4',
-            '--cache-ram', '0', '--no-cache-idle-slots',
+             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context, settings)), '--ctx-checkpoints', '4',
+            '--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--cache-idle-slots',
             '-b', '512', '-ub', '128', '-t', '2' if not settings.get('cpu_offload',False) and cache_location=='gpu' else '6', '--jinja',
             '--chat-template-kwargs', json.dumps({'enable_thinking':True,'preserve_thinking':True,'reasoning_effort':settings.get('reasoning_effort','xhigh')}),
             '--reasoning-budget', str(reasoning_budget(settings)), '-n', '-1',
             '--reasoning-budget-message','Reasoning budget reached. Use the observed evidence to finish with a valid tool call or a concise answer.',
             '--temp', '1.0', '--top-p', '0.95', '--top-k', '20', '--min-p', '0.0',
             '--presence-penalty','0.0','--repeat-penalty','1.0',
-            '--slot-save-path', str(ROOT / 'cache'), '--metrics',
+            '--slot-save-path', str(PROMPT_CACHE_DIRECTORY), '--metrics',
             '--spec-type', selected_decoding(settings,name), '--no-webui', '--image-max-tokens', '2048']
     if model_supports_vision(name):
         index = args.index('-np')
@@ -604,9 +722,10 @@ def model_args(name, context):
     return args
 
 
-def gpu_layers(name, context):
-    if selected_backend()=='moe4all':return 'dynamic-gpu'
-    if not load_settings().get('cpu_offload',False):
+def gpu_layers(name, context, settings=None):
+    settings = load_settings() if settings is None else settings
+    if selected_backend(settings)=='moe4all':return 'dynamic-gpu'
+    if not settings.get('cpu_offload',False):
         return 'all'
     # Explicit bounds avoid the Vulkan auto-fit probe allocating shared system RAM.
     # Preserve room for the vision encoder, attention state and the desktop.
@@ -624,16 +743,17 @@ def gpu_layers(name, context):
         return max(8, min(38, 48 - max(0, context - 40960) // 20480))
     return max(8, min(48, 56 - max(0, context - 102400) // 16384))
 
-def gpu_memory_required_mib(name,context):
+def gpu_memory_required_mib(name,context,settings=None):
+    settings = load_settings() if settings is None else settings
     # Include the entire GGUF (conservative), Q4 KV, vision and graph headroom.
-    cache_bytes=18432*context if kv_cache_location(context)=='gpu' else 0
-    extra_mtp=(cache_bytes/16/1048576+128) if selected_decoding(name=name)=='draft-mtp' else 0
-    projector = vision_file(name=name)
+    cache_bytes=18432*context if kv_cache_location(context,settings)=='gpu' else 0
+    extra_mtp=(cache_bytes/16/1048576+128) if selected_decoding(settings,name)=='draft-mtp' else 0
+    projector = vision_file(settings,name)
     vision_bytes = projector.stat().st_size if model_supports_vision(name) and projector.is_file() else 0
-    return (model_file(name).stat().st_size+vision_bytes+cache_bytes)/1048576+1024+extra_mtp
+    return (model_file(name,settings).stat().st_size+vision_bytes+cache_bytes)/1048576+1024+extra_mtp
 
-def gpu_device_memory():
-    backend=selected_backend()
+def gpu_device_memory(backend=None):
+    backend=backend or selected_backend()
     ensure_backend_installed(backend)
     if backend=='moe4all':
         from moe4all_backend import resources
@@ -649,16 +769,18 @@ def gpu_device_memory():
     return tuple(int(value) for value in found.groups())
 
 
-def ensure_full_gpu_capacity(name,context,available=False):
-    if selected_backend()=='moe4all':
+def ensure_full_gpu_capacity(name,context,available=False,settings=None):
+    settings = load_settings() if settings is None else settings
+    backend=selected_backend(settings)
+    if backend=='moe4all':
         # The engine budgets dynamic KV and GPU paging; do not apply llama's
         # fully-preallocated Q4-cache formula to its Q8 physical segments.
         if available_ram_mib()<3072:raise RuntimeError('系统可用内存不足，未启动 MoE4All。')
         return
-    if load_settings().get('cpu_offload',False):
+    if settings.get('cpu_offload',False):
         return
-    required=gpu_memory_required_mib(name,context)
-    total,free=gpu_device_memory()
+    required=gpu_memory_required_mib(name,context,settings)
+    total,free=gpu_device_memory(backend)
     if required>(free if available else total):
         suggestion='请使用 Jack，或为 Huihui 选择更小的量化版本。' if name==HUIHUI_MODEL else '请调小窗口，或关闭其他占用显存的程序。'
         raise RuntimeError(f'{MODELS[name]["label"]} 的全显卡模式需要约 {required/1024:.1f}GB 显存（含视觉、缓存和余量），'
@@ -766,50 +888,52 @@ def active_model():
     except (OSError, ValueError):
         return {}
 
-def start_model(model_id=None, context=None, wait=False, prompt_tokens=None, output_reserve=None, full_context=False):
+def start_model(model_id=None, context=None, wait=False, prompt_tokens=None, output_reserve=None, full_context=False, settings=None):
     start_gateway()
-    settings = load_settings()
+    settings = load_settings() if settings is None else settings
     name = model_id or selected_model(settings)
     ceiling = max(MIN_CONTEXT,min(context_limits()[name],int(context or context_for(settings,name))))
     selection=dict(settings)
     selection['model_contexts']={**settings.get('model_contexts',{}),name:ceiling}
     context=ceiling if full_context else runtime_context_for(selection,name,prompt_tokens,output_reserve)
     with model_lock():
-        return _start_model(name, context, wait, ceiling)
+        return _start_model(name, context, wait, ceiling, selection)
 
-def _start_model(name, context, wait, ceiling=None):
-    backend=selected_backend()
+def _start_model(name, context, wait, ceiling=None, settings=None):
+    settings = load_settings() if settings is None else settings
+    backend=selected_backend(settings)
     ensure_backend_installed(backend)
     if not all(path.exists() for path in model_required_files(name)):
         raise RuntimeError('模型尚未下载完成，请查看模型页的下载进度。')
     current = active_model()
-    desired_layers=gpu_layers(name,context)
-    desired_cache=kv_cache_location(context)
-    desired_performance=load_settings().get('performance_mode','standard')
-    desired_decoding=selected_decoding(name=name)
-    desired_template=chat_template_state(name)
+    desired_layers=gpu_layers(name,context,settings)
+    desired_cache=kv_cache_location(context,settings)
+    desired_performance=settings.get('performance_mode','standard')
+    desired_decoding=selected_decoding(settings,name)
+    desired_template=chat_template_state(name,settings)
     from emotion_vectors import emotion_state
-    desired_emotion=emotion_state(ROOT,model_file(name),load_settings())
+    desired_emotion=emotion_state(ROOT,model_file(name,settings),settings)
     if backend=='moe4all':
         from moe4all_backend import validate
-        validate(load_settings(),name,context,desired_template,desired_emotion,desired_decoding)
-    policy_matches=(current.get('gpu_layers')==desired_layers and current.get('reasoning_budget')==reasoning_budget()
-                    and active_model_supports_vision(current)==configured_vision(name)
+        validate(settings,name,context,desired_template,desired_emotion,desired_decoding)
+    policy_matches=(current.get('gpu_layers')==desired_layers and current.get('reasoning_budget')==reasoning_budget(settings)
+                    and active_model_supports_vision(current)==configured_vision(name,settings)
                     and current.get('backend','vulkan')==backend
                     and current.get('performance_mode','standard')==desired_performance
-                    and current.get('vision_gpu_offload',True)==load_settings().get('vision_gpu_offload',True)
-                    and current.get('kv_cache_type','q4_0')==load_settings().get('kv_cache_type','q4_0')
+                    and current.get('vision_gpu_offload',True)==settings.get('vision_gpu_offload',True)
+                    and current.get('kv_cache_type','q4_0')==settings.get('kv_cache_type','q4_0')
                     and current.get('speculative_type','none')==desired_decoding
                     and current.get('kv_cache_location')==desired_cache
                     and current.get('chat_template_policy','embedded')==desired_template['policy']
                     and current.get('chat_template_sha256')==desired_template.get('sha256')
+                    and prompt_cache_policy_matches(current)
                     and current.get('emotion_signature')==desired_emotion['signature'])
     if not server_ready() and current.get('pid') and owned_process(current['pid']):
         if current.get('model') == name and current.get('context') == context and policy_matches:
             if wait:
                 wait_model_ready(current['pid'])
             return None
-        ensure_full_gpu_capacity(name,context)
+        ensure_full_gpu_capacity(name,context,settings=settings)
         _stop_model()
     if server_ready():
         props = api('/props')
@@ -821,12 +945,12 @@ def _start_model(name, context, wait, ceiling=None):
             return None
         if any(slot.get('is_processing') for slot in api('/slots')):
             raise RuntimeError('请等当前任务完成后，再应用模型或上下文设置。')
-        ensure_full_gpu_capacity(name,context)
+        ensure_full_gpu_capacity(name,context,settings=settings)
         _stop_model()
         if server_ready():
             raise RuntimeError('模型端口被其他程序占用，未关闭其他程序。')
-    ensure_full_gpu_capacity(name,context,available=True)
-    args = model_args(name, context)
+    ensure_full_gpu_capacity(name,context,available=True,settings=settings)
+    args = model_args(name, context, settings)
     log = open(ROOT / 'logs' / ('model-moe4all.log' if backend=='moe4all' else 'model.log'),
                'w' if backend=='moe4all' else 'a', encoding='utf-8')
     startup = subprocess.STARTUPINFO()
@@ -841,11 +965,13 @@ def _start_model(name, context, wait, ceiling=None):
         'model_path':str(model_file(name)),
         'performance_mode':desired_performance,
         'speculative_type':desired_decoding,
-        'cpu_offload':load_settings().get('cpu_offload',False),'reasoning_budget':reasoning_budget(),
-        'kv_cache_location':desired_cache,'vision_enabled':configured_vision(name),
+        'cpu_offload':settings.get('cpu_offload',False),'reasoning_budget':reasoning_budget(settings),
+        'kv_cache_location':desired_cache,'vision_enabled':configured_vision(name,settings),
         'vision_projector':str(vision_file(settings,name)) if configured_vision(name,settings) else None,
-        'vision_gpu_offload':load_settings().get('vision_gpu_offload',True),
-        'kv_cache_type':load_settings().get('kv_cache_type','q4_0'),
+        'vision_gpu_offload':settings.get('vision_gpu_offload',True),
+        'kv_cache_type':settings.get('kv_cache_type','q4_0'),
+        'prompt_cache_enabled':True,'prompt_cache_ram_mib':PROMPT_CACHE_RAM_MIB,
+        'prompt_cache_idle_slots':True,'prompt_cache_directory':str(PROMPT_CACHE_DIRECTORY),
         'isolated_console':True,'chat_template_policy':desired_template['policy'],
         'chat_template_sha256':desired_template.get('sha256'),
         'chat_template_file':desired_template.get('file'),
@@ -882,18 +1008,48 @@ def wait_model_ready(pid):
             raise RuntimeError('模型加载超时，请查看运行日志。')
         time.sleep(0.5)
 
-def start_gateway():
-    settings = load_settings()
+def _gateway_listener():
+    query=("$c=Get-NetTCPConnection -State Listen -LocalPort 8081 -ErrorAction SilentlyContinue | Select-Object -First 1; "
+           "if($c){Get-CimInstance Win32_Process -Filter ('ProcessId='+$c.OwningProcess) | "
+           "Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress}")
     try:
-        req = urllib.request.Request('http://127.0.0.1:8081/health',
-                      headers={'Authorization':'Bearer '+settings['api_key']})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            health=json.load(response)
+        answer=subprocess.run(['powershell.exe','-NoProfile','-Command',query],capture_output=True,
+            timeout=12,creationflags=NO_WINDOW)
+    except (OSError,subprocess.TimeoutExpired):
+        return None
+    raw=answer.stdout.decode('utf-8-sig',errors='replace').strip()
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return None
+
+def _gateway_health():
+    settings=load_settings()
+    request=urllib.request.Request('http://127.0.0.1:8081/health',
+        headers={'Authorization':'Bearer '+settings['api_key']})
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request,timeout=3) as response:
+        return json.load(response)
+
+def _gateway_conflict(owner, reason):
+    pid=(owner or {}).get('ProcessId','未知')
+    name=(owner or {}).get('Name','未知程序')
+    image=(owner or {}).get('ExecutablePath','路径不可读')
+    return (f'本地接口端口 8081 被 PID {pid}（{name}）占用，程序：{image}。{reason}'
+            f' 未自动结束该进程。请查看运行日志：{ROOT / "logs"}')
+
+def start_gateway():
+    try:
+        health=_gateway_health()
         if health.get('adapter_version') != ADAPTER_VERSION:
-            raise RuntimeError('本地模型接口仍是旧版本，请关闭旧接口后重新启动软件。')
+            raise RuntimeError('本地模型接口版本与工作台不一致；重新打开工作台以执行安全切换。')
         return
     except urllib.error.HTTPError as error:
-        raise RuntimeError('本地模型接口配置不一致，请重启本地接口。') from error
+        raise RuntimeError(_gateway_conflict(_gateway_listener(),
+            f'接口认证失败（HTTP {error.code}），未自动接管。')) from error
+    except (ValueError,KeyError) as error:
+        raise RuntimeError(_gateway_conflict(_gateway_listener(),
+            '接口返回的数据无效，未自动接管。')) from error
     except OSError:
         pass
     args = [sys.executable, '--gateway'] if getattr(sys,'frozen',False) else \
@@ -903,26 +1059,33 @@ def start_gateway():
     log.close()
 
 def refresh_gateway_for_current_app():
-    """Upgrade the private gateway after the previous desktop has released its task."""
+    """Reuse a matching gateway or safely replace an authenticated idle MyCodex gateway."""
     if not getattr(sys,'frozen',False):
         return
-    query=("$c=Get-NetTCPConnection -State Listen -LocalPort 8081 -ErrorAction SilentlyContinue | Select-Object -First 1; "
-           "if($c){Get-CimInstance Win32_Process -Filter ('ProcessId='+$c.OwningProcess) | "
-           "Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress}")
-    def listener():
-        answer=subprocess.run(['powershell.exe','-NoProfile','-Command',query],capture_output=True,
-            timeout=12,creationflags=NO_WINDOW)
-        raw=answer.stdout.decode('utf-8-sig',errors='replace').strip()
-        return json.loads(raw) if raw else None
-    old=listener()
+    old=_gateway_listener()
     if not old:
         start_gateway()
         return
     previous=Path(old.get('ExecutablePath') or '')
-    if previous.resolve()==Path(sys.executable).resolve():
+    if '--gateway' not in old.get('CommandLine','') or previous.name.lower()!='mycodex.exe':
+        raise RuntimeError(_gateway_conflict(old,'占用者不是可确认的 MyCodex 接口。'))
+    try:
+        health=_gateway_health()
+    except (OSError,ValueError,KeyError) as error:
+        raise RuntimeError(_gateway_conflict(old,'无法通过本地密钥确认其属于 MyCodex。')) from error
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-runtime-\d+',str(health.get('adapter_version',''))):
+        raise RuntimeError(_gateway_conflict(old,'接口版本标记无效，未自动接管。'))
+    if health.get('adapter_version') == ADAPTER_VERSION:
         return
-    if not previous.is_relative_to(ROOT/'app') or '--gateway' not in old.get('CommandLine',''):
-        raise RuntimeError('本地接口端口由其他程序占用，请先检查运行日志。')
+    try:
+        same_image=previous.resolve()==Path(sys.executable).resolve()
+    except OSError:
+        same_image=False
+    if same_image:
+        raise RuntimeError(_gateway_conflict(old,
+            '同一程序路径的接口报告了不同版本，未自动结束它。请检查运行日志。'))
+    if not previous.is_file():
+        raise RuntimeError(_gateway_conflict(old,'旧接口程序文件已不存在，无法安全回退。'))
     try:
         if any(slot.get('is_processing') for slot in api('/slots')):
             raise RuntimeError('旧会话仍在推理，任务结束后重新打开新版工作台。')
@@ -944,7 +1107,7 @@ def refresh_gateway_for_current_app():
                 capture_output=True,timeout=10,creationflags=NO_WINDOW)
             if engines.stdout.strip():
                 raise RuntimeError('旧会话仍在执行工具，任务结束后重新打开新版工作台。')
-    current=listener()
+    current=_gateway_listener()
     if not current or current['ProcessId']!=old['ProcessId'] or current.get('ExecutablePath')!=old.get('ExecutablePath'):
         raise RuntimeError('本地接口状态刚发生变化，请重新打开工作台。')
     os.kill(int(old['ProcessId']),signal.SIGTERM)
@@ -994,8 +1157,12 @@ class RpcClient:
         self.closed = False
         from proxy_service import ProxyLease
         self.proxy_lease = ProxyLease(ROOT)
-        self.proxy_lease.start()
-        env = self.proxy_lease.apply_environment(os.environ.copy())
+        self.proxy_error = None
+        try:
+            self.proxy_lease.start()
+        except Exception as error:
+            self.proxy_error = str(error)
+        env = self.proxy_lease.apply_environment(os.environ.copy(),allow_unavailable=True)
         env['CODEX_HOME'] = str(ROOT / 'codex-home')
         env['RUST_LOG'] = 'warn'
         # Private tool children must return readable Chinese text through pipes.

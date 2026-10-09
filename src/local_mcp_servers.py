@@ -16,6 +16,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
 ADB = Path(os.environ.get('LOCAL_CODEX_ADB', r'C:\Users\18213\AppData\Local\VectorAndroidSdk\platform-tools\adb.exe'))
@@ -71,8 +73,10 @@ def _model_inspect(repo_id, revision=None):
         raise ValueError('仓库必须是可信 Hub 的 owner/name 格式。')
     if revision and not re.fullmatch(r'[0-9a-fA-F]{40}', revision):
         raise ValueError('请传入搜索结果里的完整 40 位提交 SHA。')
-    query = urllib.parse.urlencode({'blobs': 'true', **({'revision': revision} if revision else {})})
-    row = _request('https://huggingface.co/api/models/' + urllib.parse.quote(repo_id, safe='/') + '?' + query)
+    endpoint = 'https://huggingface.co/api/models/' + urllib.parse.quote(repo_id, safe='/')
+    if revision:
+        endpoint += '/revision/' + urllib.parse.quote(revision, safe='')
+    row = _request(endpoint + '?blobs=true')
     files = []
     for item in row.get('siblings', []):
         lfs = item.get('lfs') or {}
@@ -207,35 +211,15 @@ def _model_register(path, display_name='', projector_path=''):
 
 
 def _model_validate(model_id, hash_file=False):
-    result = _catalog().validate_local(model_id, hash_file=hash_file)
-    runtime = {'active': False, 'health': None, 'model_path': None}
-    try:
-        from core import active_model, api, model_file
-        live = active_model()
-        props = api('/props', timeout=3)
-        active_path = str(Path(props.get('model_path', '')).resolve()) if props.get('model_path') else None
-        wanted_path = str(model_file(model_id).resolve())
-        runtime = {'active': active_path == wanted_path, 'health': api('/health', timeout=3).get('status'),
-                   'model_path': active_path}
-        if runtime['active'] and runtime['health'] == 'ok' and live.get('model') == model_id:
-            catalog = _catalog(); data = json.loads(catalog.path.read_text(encoding='utf-8-sig'))
-            for row in data['models']:
-                if row.get('id') == model_id:
-                    row['status'] = 'runtime_validated'
-                    row['last_runtime_validation_utc'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-            catalog.write(data)
-            result['status'] = 'runtime_validated'
-    except (OSError, ValueError, KeyError, urllib.error.URLError):
-        pass
-    return {**result, 'runtime_validation': 'passed' if result.get('status')=='runtime_validated' else 'pending',
-            'active_runtime_check': runtime,
-            'message': '文件检查已完成；只有该模型当前已在运行且 /health 与 /props 对上时才更新为运行时已验证。其余情况需先在桌面应用并验证模型。'}
+    from model_validation import start_validation
+    return start_validation(ROOT, _catalog(), model_id, hash_file)
 
 
 def _model_activate(model_id):
     catalog = _catalog()
     validation = catalog.validate_local(model_id)
-    if catalog[model_id].get('status') not in ('runtime_validated', 'builtin'):
+    from model_validation import evidence_is_current
+    if catalog[model_id].get('status') != 'builtin' and not evidence_is_current(catalog[model_id], validation['path']):
         raise ValueError('该模型尚未通过实际运行时验证；当前仅登记/文件校验通过，拒绝自动切换。')
     request = {'request_id': uuid.uuid4().hex, 'model_id': model_id, 'status': 'queued', 'created_at': time.time(),
                'file_validation': validation}
@@ -337,6 +321,9 @@ def _apk_metadata(apk_path):
     cert = re.search(r'(?i)certificate SHA-256 digest:\s*([0-9a-f:]{64,95})', signing)
     cert_digest = cert.group(1).replace(':', '').lower() if cert else None
     application_id = None
+    application_label = None
+    application_labels = []
+    version_code = min_sdk = None
     sdk = Path(os.environ.get('ANDROID_SDK_ROOT') or os.environ.get('ANDROID_HOME') or r'C:\Users\18213\AppData\Local\VectorAndroidSdk')
     analyzers = sorted(sdk.glob('cmdline-tools/*/bin/apkanalyzer.bat'), reverse=True)
     if analyzers:
@@ -344,9 +331,128 @@ def _apk_metadata(apk_path):
                                  timeout=25, creationflags=NO_WINDOW)
         if parsed.returncode == 0:
             application_id = parsed.stdout.decode('utf-8', errors='replace').strip()
+            for field, operation in (('min_sdk', 'min-sdk'), ('version_code', 'version-code')):
+                metadata = subprocess.run([str(analyzers[0]), 'manifest', operation, str(path)], capture_output=True,
+                                          timeout=25, creationflags=NO_WINDOW)
+                value = metadata.stdout.decode('utf-8', errors='replace').strip()
+                if metadata.returncode == 0 and value.isdigit():
+                    if field == 'min_sdk': min_sdk = int(value)
+                    else: version_code = int(value)
+    aapt_tools = sorted((sdk / 'build-tools').glob('*/aapt2.exe'), reverse=True)
+    if aapt_tools and (not application_id or min_sdk is None or version_code is None or application_label is None):
+        badging = subprocess.run([str(aapt_tools[0]), 'dump', 'badging', str(path)], capture_output=True,
+                                timeout=25, creationflags=NO_WINDOW)
+        if badging.returncode == 0:
+            badge = badging.stdout.decode('utf-8', errors='replace')
+            package = re.search(r"(?m)^package: name='([^']+)' versionCode='(\d+)'", badge)
+            sdk_match = re.search(r"(?m)^sdkVersion:'(\d+)'", badge)
+            label_match = (re.search(r"(?m)^application-label:'([^']*)'", badge)
+                           or re.search(r"(?m)^application:\s+label='([^']*)'", badge))
+            application_labels = list(dict.fromkeys(re.findall(
+                r"(?m)^application-label(?:-[^:]*)?:'([^']*)'", badge)))
+            if package: application_id, version_code = package.group(1), int(package.group(2))
+            if sdk_match: min_sdk = int(sdk_match.group(1))
+            if label_match: application_label = label_match.group(1)
+            if not application_label and application_labels:
+                application_label = application_labels[0]
+    with zipfile.ZipFile(path) as archive:
+        abis = sorted({name.split('/')[1] for name in archive.namelist()
+                       if name.startswith('lib/') and name.endswith('.so') and len(name.split('/')) > 2})
     return {'path': str(path), 'size_bytes': path.stat().st_size, 'signature_verified': True,
             'certificate_sha256': cert_digest, 'package_name': application_id,
-            'version': None, 'publisher_identity_confirmed': False}
+            'application_label': application_label, 'application_labels': application_labels,
+            'version_code': version_code, 'min_sdk': min_sdk, 'native_abis': abis,
+            'publisher_identity_confirmed': False}
+
+
+def _read_android_ui_xml():
+    code, output = _adb('shell', 'uiautomator', 'dump', '/sdcard/window.xml', timeout=15)
+    if code:
+        return ''
+    code, xml = _adb('shell', 'cat', '/sdcard/window.xml', timeout=10)
+    return xml if code == 0 and '<hierarchy' in xml else ''
+
+
+def _capture_install_prompt_screenshot():
+    configured = os.environ.get('LOCAL_CODEX_ANDROID_INSTALL_PROMPT_CAPTURE', '').strip()
+    if not configured:
+        return None
+    target = Path(configured).expanduser().resolve()
+    if target.drive.upper() != 'G:':
+        raise ValueError('安装确认截图只允许保存到 G 盘。')
+    result = subprocess.run([str(ADB), '-s', DEVICE, 'exec-out', 'screencap', '-p'],
+                            capture_output=True, timeout=20, creationflags=NO_WINDOW)
+    if result.returncode or not result.stdout.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise RuntimeError('无法在自动确认前保存有效的安装提示截图。')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(result.stdout)
+    return str(target)
+
+
+def _auto_confirm_usb_install(package_name, application_label):
+    """Confirm only the OS USB-install prompt that names this exact APK label."""
+    xml = _read_android_ui_xml()
+    if not xml:
+        return {'detected': False, 'confirmed': False, 'reason': '当前没有可读的安装确认界面。'}
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return {'detected': False, 'confirmed': False, 'reason': '当前界面无效或不是安装提示。'}
+    nodes = list(root.iter('node'))
+    visible_text = [str(node.attrib.get(key) or '').strip() for node in nodes for key in ('text','content-desc')]
+    prompt_markers = ('USB安装提示', '通过USB安装', 'USB install', 'Install via USB')
+    is_prompt = any(marker.casefold() in value.casefold() for marker in prompt_markers for value in visible_text)
+    if not is_prompt:
+        return {'detected': False, 'confirmed': False, 'reason': '未出现 USB 安装确认。'}
+    expected_labels = ([application_label] if isinstance(application_label, str) else list(application_label or []))
+    expected_labels = [str(value).strip() for value in expected_labels if str(value).strip()]
+    matched_labels = [value for value in visible_text if value in expected_labels]
+    if not matched_labels:
+        raise RuntimeError(f'检测到 USB 安装确认，但界面未显示待安装 APK 清单中的精确应用名称（{expected_labels or [package_name]}）；已停止，不会点确认。')
+    matched_label = matched_labels[0]
+    confirm_nodes = []
+    for node in nodes:
+        text = str(node.attrib.get('text') or node.attrib.get('content-desc') or '').strip()
+        if text not in ('继续安装', '继续', 'Continue install', 'Install anyway'):
+            continue
+        if node.attrib.get('clickable', '').lower() != 'true':
+            continue
+        bounds = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds', ''))
+        if bounds:
+            left, top, right, bottom = map(int, bounds.groups())
+            confirm_nodes.append(((left + right) // 2, (top + bottom) // 2))
+    if len(confirm_nodes) != 1:
+        raise RuntimeError('USB 安装确认与 APK 名称匹配，但找不到唯一的“继续安装”按钮；已停止，不会盲点屏幕。')
+    prompt_screenshot = _capture_install_prompt_screenshot()
+    x, y = confirm_nodes[0]
+    code, output = _adb('shell', 'input', 'tap', str(x), str(y), timeout=10)
+    confirmation_method = 'adb-shell'
+    if code and 'INJECT_EVENTS' in output:
+        # Some Android builds deliberately deny touch injection to the adb shell.
+        # The device is explicitly user-authorized and has an existing root path;
+        # use it only for this exact, label-matched confirmation button.
+        code, output = _adb('shell', 'su', '-c', f'input tap {x} {y}', timeout=10)
+        confirmation_method = 'root-su'
+    if code:
+        raise RuntimeError(f'自动确认 USB 安装失败 ({code})：{output}')
+    for _ in range(12):
+        time.sleep(0.4)
+        after = _read_android_ui_xml()
+        try:
+            after_nodes = list(ET.fromstring(after).iter('node')) if after else []
+        except ET.ParseError:
+            after_nodes = []
+        after_text = [str(node.attrib.get(key) or '').strip() for node in after_nodes for key in ('text','content-desc')]
+        if not (any(marker.casefold() in value.casefold() for marker in prompt_markers for value in after_text)
+                and matched_label in after_text):
+            break
+    else:
+        raise RuntimeError('已点按“继续安装”，但手机仍显示同一 APK 的 USB 安装确认；安装未继续。')
+    return {'detected': True, 'confirmed': True, 'application_label': matched_label,
+            'matched_manifest_label': matched_label,
+            'manifest_labels': expected_labels,
+            'confirmation_text': '继续安装', 'screen_coordinate': [x, y],
+            'confirmation_method': confirmation_method, 'prompt_screenshot': prompt_screenshot}
 
 
 def _install_apks(paths, package_name, expected_certificate_sha256, replace=False):
@@ -359,13 +465,30 @@ def _install_apks(paths, package_name, expected_certificate_sha256, replace=Fals
     if not isinstance(paths, list) or not paths:
         raise ValueError('至少提供一个 APK；多文件时使用兼容的 split APK 集合。')
     verified = []
+    info = _device_info()['properties']
+    device_api = int(info['ro.build.version.sdk'])
+    _, abi_text = _adb('shell', 'getprop', 'ro.product.cpu.abilist')
+    device_abis = set(abi_text.strip().split(',')) or {info['ro.product.cpu.abi']}
     for item in paths:
-        meta = _apk_metadata(item)
-        if meta['package_name'] and meta['package_name'] != package_name:
+        resolved=Path(item).expanduser().resolve(strict=True)
+        if resolved.drive.upper()!='G:':
+            raise ValueError('APK 自动安装只接受 G 盘中的 APK 文件。')
+        meta = _apk_metadata(resolved)
+        if not meta['package_name']:
+            raise ValueError('无法验证 APK 包名；未执行安装。请安装 SDK apkanalyzer 或配置 aapt2。')
+        if meta['package_name'] != package_name:
             raise ValueError(f"APK 包名不符：{meta['path']} 包含 {meta['package_name']}，预期 {package_name}。")
+        if meta.get('min_sdk') is None or meta.get('version_code') is None:
+            raise ValueError('无法验证 APK minSDK/版本；未执行安装。')
+        if meta['min_sdk'] > device_api:
+            raise ValueError(f"APK 需要 API {meta['min_sdk']}，设备只有 API {device_api}。")
+        if meta.get('native_abis') and not device_abis.intersection(meta['native_abis']):
+            raise ValueError('APK 原生 ABI 与指定设备不匹配；未执行安装。')
         if meta['certificate_sha256'] != expected:
             raise ValueError(f"APK 签名证书不符：{meta['path']} SHA256={meta['certificate_sha256']}，预期={expected}。")
         verified.append(meta)
+    if len({meta['version_code'] for meta in verified}) != 1:
+        raise ValueError('split APK 的版本不一致；未执行安装。')
     args = ['install', '-r'] if len(verified) == 1 else ['install-multiple', '-r']
     if replace:
         args.append('-d')
@@ -373,11 +496,46 @@ def _install_apks(paths, package_name, expected_certificate_sha256, replace=Fals
     code, output = _adb(*args, timeout=300)
     if code or 'Success' not in output:
         raise RuntimeError(f'ADB 安装失败 ({code})：{output}')
+    confirmation = _auto_confirm_usb_install(
+        package_name, verified[0].get('application_labels') or verified[0].get('application_label'))
     check_code, package_path = _adb('shell', 'pm', 'path', package_name, timeout=20)
     if check_code or 'package:' not in package_path:
         raise RuntimeError('ADB 回报安装成功，但设备包管理器查不到目标包：' + package_path)
     return {'serial': DEVICE, 'package_name': package_name, 'installed': True, 'adb_result': output,
-            'package_path': package_path, 'apk_signatures_checked': verified, 'launched': False}
+            'package_path': package_path, 'apk_signatures_checked': verified,
+            'usb_install_confirmation': confirmation, 'launched': False}
+
+
+def _push_apk(apk_path, destination_name=''):
+    """Verify a local APK and copy it to the selected phone without installing it."""
+    _require_device()
+    path=Path(apk_path).expanduser().resolve(strict=True)
+    if path.suffix.lower()!='.apk' or path.drive.upper()!='G:':
+        raise ValueError('APK 推送只接受 G 盘中的 .apk 文件。')
+    meta=_apk_metadata(path)
+    name=str(destination_name or path.name)
+    if (len(name)>160 or not re.fullmatch(r'(?i)[a-z0-9][a-z0-9._-]*\.apk',name)
+            or '..' in name or '/' in name or '\\' in name):
+        raise ValueError('目标文件名只能包含字母、数字、点、下划线和连字符，并以 .apk 结尾。')
+    remote='/sdcard/Download/'+name
+    code,output=_adb('shell','mkdir','-p','/sdcard/Download',timeout=20)
+    if code:
+        raise RuntimeError(f'准备手机 Download 目录失败 ({code})：{output}')
+    code,output=_adb('push',str(path),remote,timeout=300)
+    if code or 'pushed' not in output.lower():
+        raise RuntimeError(f'APK 复制失败 ({code})：{output}')
+    local_sha=hashlib.sha256(path.read_bytes()).hexdigest()
+    code,remote_result=_adb('shell','sha256sum',remote,timeout=40)
+    if code:
+        raise RuntimeError(f'已复制 APK，但无法读取手机端 SHA-256 ({code})：{remote_result}')
+    remote_sha=remote_result.split()[0].lower() if remote_result.split() else ''
+    if remote_sha!=local_sha:
+        raise RuntimeError('已复制 APK，但手机端与 G 盘源文件 SHA-256 不一致。')
+    props=_device_info()['properties']
+    return {'serial':DEVICE,'device_model':props.get('ro.product.model'),'destination':remote,
+            'package_name':meta.get('package_name'),'version_code':meta.get('version_code'),
+            'certificate_sha256':meta.get('certificate_sha256'),'size_bytes':path.stat().st_size,
+            'sha256':local_sha,'remote_sha256_matches':True,'pushed':True,'installed':False,'launched':False}
 
 
 def _launch_package(package_name):
@@ -520,10 +678,9 @@ def _design_status():
         alive = False
         if isinstance(pid, int):
             try:
-                listing=subprocess.run(['tasklist', '/FI', f'PID eq {pid}', '/FO', 'CSV', '/NH'], capture_output=True,
-                                       timeout=5, creationflags=NO_WINDOW).stdout.decode('utf-8', errors='replace')
-                alive = any(len(cols)>1 and cols[1].strip().strip('"')==str(pid)
-                            for cols in (line.split(',') for line in listing.splitlines()))
+                from process_identity import process_identity
+                expected = (owned.get(key) or {}).get('identity')
+                alive = bool(expected and process_identity(pid) == expected)
             except OSError:
                 pass
         statuses[key] = {'path': app.get('executable'), 'version': app.get('version'), 'owned_pid': pid,
@@ -551,6 +708,9 @@ def _start_design_app(name, job_dir=''):
             args.append(app['startup_macro'])
     env = dict(os.environ)
     env.update({'DISABLE_TELEMETRY': 'true', 'BLENDERMCP_ADDONS_DIR': app.get('blender_addons_dir', '')})
+    # Scope software display settings to the design process, never the LLM.
+    env.update({str(k): str(v) for k, v in app.get('environment', {}).items()
+                if k in ('QT_OPENGL', 'QT_QUICK_BACKEND')})
     env['LOCAL_CODEX_DESIGN_JOB_DIR'] = str(working)
     state_path = ROOT / 'logs' / 'design-app-processes.json'
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -572,7 +732,10 @@ def _start_design_app(name, job_dir=''):
         owned = json.loads(state_path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         owned = {}
+    from process_identity import process_identity
+    identity = process_identity(managed_pid)
     owned[name] = {'pid': managed_pid, 'launcher_pid': process.pid, 'started_at': time.time(),
+                   'identity': identity,
                    'job_dir': str(working), 'startup_log': str(log_path)}
     _write_design_processes(owned)
     return {'app': name, 'pid': managed_pid, 'launcher_pid': process.pid, 'job_dir': str(working),
@@ -589,13 +752,14 @@ def _stop_design_app(name):
     item = owned.get(name)
     if not item or not isinstance(item.get('pid'), int):
         return {'app': name, 'stopped': False, 'reason': '没有该工作台记录的受管进程；不会关闭其他来源的应用。'}
+    from process_identity import terminate_verified
     pid = item['pid']
-    code = subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], capture_output=True,
-                          timeout=20, creationflags=NO_WINDOW).returncode
-    if code == 0:
+    stopped = terminate_verified(item.get('identity'))
+    if stopped:
         owned.pop(name, None)
         _write_design_processes(owned)
-    return {'app': name, 'pid': pid, 'stopped': code == 0, 'taskkill_exit_code': code}
+    return {'app': name, 'pid': pid, 'stopped': stopped,
+            'reason': '已核对进程句柄、程序路径和创建时间。' if stopped else '记录缺少身份或已过期；没有终止进程。'}
 
 
 def _schemas():
@@ -608,7 +772,9 @@ def _schemas():
             ('model_download_status', '查询下载进度。', {'type':'object','properties':{'job_id':{'type':'string'}},'required':['job_id']}),
             ('model_download_cancel', '请求取消下载并保留 partial 供断点续传。', {'type':'object','properties':{'job_id':{'type':'string'}},'required':['job_id']}),
             ('model_register', '将本地 GGUF 的已读元数据加入共享模型注册表；不代表运行通过。', {'type':'object','properties':{'path':{'type':'string'},'display_name':{'type':'string'},'projector_path':{'type':'string'}},'required':['path']}),
-            ('model_validate', '核对本地模型路径/大小，可选择计算完整 SHA256。', {'type':'object','properties':{'model_id':{'type':'string'},'hash_file':{'type':'boolean','default':False}},'required':['model_id']}),
+            ('model_validate', '后台旁路加载验证模型：中文、原生工具、需要的视觉；不切换当前模型。', {'type':'object','properties':{'model_id':{'type':'string'},'hash_file':{'type':'boolean','default':False}},'required':['model_id']}),
+            ('model_validation_status', '查询旁路模型验证状态和真实输出证据。', {'type':'object','properties':{'job_id':{'type':'string'}},'required':['job_id']}),
+            ('model_validation_cancel', '取消旁路验证，只结束该验证拥有的进程。', {'type':'object','properties':{'job_id':{'type':'string'}},'required':['job_id']}),
             ('model_activate', '将已通过运行时验证的模型排入安全切换队列。', {'type':'object','properties':{'model_id':{'type':'string'}},'required':['model_id']}),
             ('model_rollback', '排入切回上一成功模型的请求。', {'type':'object','properties':{}}),
         ],
@@ -617,7 +783,8 @@ def _schemas():
             ('android_device_info', '读取指定设备的 ROM、Android、API、ABI 和 Google 组件状态。', {'type':'object','properties':{}}),
             ('android_packages', '列出设备上已安装的第三方包，可按前缀过滤。', {'type':'object','properties':{'prefix':{'type':'string','default':''}}}),
             ('android_apk_inspect', '读取 APK 包名并用 apksigner 验证签名。', {'type':'object','properties':{'apk_path':{'type':'string'}},'required':['apk_path']}),
-            ('android_install_apks', '安装前必须匹配期望的包名及可信签名证书 SHA256；仅操作指定设备。', {'type':'object','properties':{'apk_paths':{'type':'array','items':{'type':'string'}},'package_name':{'type':'string'},'expected_certificate_sha256':{'type':'string'},'allow_downgrade':{'type':'boolean','default':False}},'required':['apk_paths','package_name','expected_certificate_sha256']}),
+            ('android_push_apk', '验证 G 盘 APK 签名后，只复制到已连接手机的 Download 文件夹；不会安装或启动。', {'type':'object','properties':{'apk_path':{'type':'string'},'destination_name':{'type':'string','maxLength':160}},'required':['apk_path']}),
+            ('android_install_apks', '自动安装 G 盘 APK；必须先核对包名和签名 SHA256，再提供精确包名、可信证书 SHA256；同时检查最低 Android 版本、ABI 和 split 版本；只操作已固定的设备，不启动应用。', {'type':'object','properties':{'apk_paths':{'type':'array','items':{'type':'string'}},'package_name':{'type':'string'},'expected_certificate_sha256':{'type':'string'},'allow_downgrade':{'type':'boolean','default':False}},'required':['apk_paths','package_name','expected_certificate_sha256']}),
             ('android_launch', '启动已安装应用；登录/授权停留在用户操作界面。', {'type':'object','properties':{'package_name':{'type':'string'}},'required':['package_name']}),
             ('android_accessibility_tree', '导出设备当前 UIAutomator XML 无障碍树。', {'type':'object','properties':{}}),
             ('android_screenshot', '保存并验证真实二进制 PNG 设备截图。', {'type':'object','properties':{'destination':{'type':'string','default':''}}}),
@@ -630,10 +797,22 @@ def _schemas():
             ('freecad_start', '按需启动受管 FreeCAD 图形界面及 MCP 插件。', {'type':'object','properties':{'job_dir':{'type':'string','default':''}}}),
             ('freecad_stop', '仅关闭本工作台自己启动并记录 PID 的 FreeCAD 进程树。', {'type':'object','properties':{}}),
         ],
+        'scopeweaver-source': [
+            ('scopeweaver_source_info', '读取 ScopeWeaver 源码镜像、提交历史和许可证声明；只查本地文件，不连接或启动服务。', {'type':'object','properties':{}}),
+            ('scopeweaver_search_source', '只在本地 ScopeWeaver 源码中搜索文本；不会运行代码、安装程序、联网或发起扫描。', {'type':'object','properties':{'query':{'type':'string','minLength':2,'maxLength':200},'limit':{'type':'integer','minimum':1,'maximum':20}} ,'required':['query']}),
+            ('scopeweaver_read_source', '读取本地 ScopeWeaver 仓库中的小型文本源文件；拒绝越界路径、密钥文件和大文件。', {'type':'object','properties':{'relative_path':{'type':'string','maxLength':300},'max_chars':{'type':'integer','minimum':1,'maximum':12000}},'required':['relative_path']}),
+        ],
+        'vmware': [
+            ('vmware_status', '只读检查本机 VMware Workstation 与 vmrun 程序文件是否存在；不会启动 VMware 主程序。', {'type':'object','properties':{}}),
+            ('vmware_list_running_vms', '只读列出当前运行中的本机 VMware 虚拟机；不更改虚拟机状态。', {'type':'object','properties':{}}),
+        ],
     }
 
 
 def _dispatch(service, name, args):
+    if service == 'voice':
+        from creative_tools import dispatch
+        return dispatch(ROOT, service, name, args)
     args = args if isinstance(args, dict) else {}
     if service == 'model-manager':
         if name == 'model_list': return {'models': [dict(row, id=model_id) for model_id, row in _catalog().items()]}
@@ -644,6 +823,9 @@ def _dispatch(service, name, args):
         if name == 'model_download_cancel': return _download_cancel(args['job_id'])
         if name == 'model_register': return _model_register(args['path'], args.get('display_name',''), args.get('projector_path',''))
         if name == 'model_validate': return _model_validate(args['model_id'], bool(args.get('hash_file',False)))
+        if name in ('model_validation_status', 'model_validation_cancel'):
+            from model_validation import validation_status, cancel_validation
+            return (validation_status if name.endswith('_status') else cancel_validation)(ROOT, args['job_id'])
         if name == 'model_activate': return _model_activate(args['model_id'])
         if name == 'model_rollback':
             history = ROOT / 'model-activation-history.json'
@@ -655,6 +837,7 @@ def _dispatch(service, name, args):
         if name == 'android_device_info': return _device_info()
         if name == 'android_packages': return _packages_list(args.get('prefix',''))
         if name == 'android_apk_inspect': return _apk_metadata(args['apk_path'])
+        if name == 'android_push_apk': return _push_apk(args['apk_path'], args.get('destination_name',''))
         if name == 'android_install_apks': return _install_apks(args['apk_paths'], args['package_name'], args['expected_certificate_sha256'], bool(args.get('allow_downgrade',False)))
         if name == 'android_launch': return _launch_package(args['package_name'])
         if name == 'android_accessibility_tree': return _accessibility_tree()
@@ -666,14 +849,170 @@ def _dispatch(service, name, args):
         if name == 'blender_stop': return _stop_design_app('blender')
         if name == 'freecad_start': return _start_design_app('freecad', args.get('job_dir',''))
         if name == 'freecad_stop': return _stop_design_app('freecad')
+    if service == 'scopeweaver-source':
+        if name == 'scopeweaver_source_info': return _scopeweaver_source_info()
+        if name == 'scopeweaver_search_source': return _scopeweaver_search_source(args['query'], args.get('limit',10))
+        if name == 'scopeweaver_read_source': return _scopeweaver_read_source(args['relative_path'], args.get('max_chars',6000))
+    if service == 'vmware':
+        if name == 'vmware_status': return _vmware_status()
+        if name == 'vmware_list_running_vms': return _vmware_list_running_vms()
     raise ValueError('未实现或不支持的工具：' + name)
+
+
+SCOPEWEAVER_SOURCE_ROOT = Path(r'G:\LocalCodex-work\scopeweaver-review-20261009')
+SCOPEWEAVER_UPSTREAM_BASE = '160fe13'
+SCOPEWEAVER_ALLOWED_SUFFIXES = {'.go','.md','.txt','.ts','.tsx','.js','.jsx','.json','.yaml','.yml','.toml','.sql','.sh','.bat','.py','.html','.css'}
+SCOPEWEAVER_IGNORED_PARTS = {'.git','node_modules','dist','build','data','logs','vendor','coverage'}
+SCOPEWEAVER_MAX_FILE_BYTES = 256_000
+
+
+def _scopeweaver_root():
+    root = Path(os.environ.get('LOCAL_CODEX_SCOPEWEAVER_SOURCE_ROOT', str(SCOPEWEAVER_SOURCE_ROOT))).resolve()
+    if not root.is_dir() or not (root / 'README.md').is_file() or not (root / 'LICENSE').is_file():
+        raise FileNotFoundError('ScopeWeaver 本地源码副本不存在或缺少 README/LICENSE；请先检查 G 盘源码目录。')
+    return root
+
+
+def _scopeweaver_safe_file(relative_path):
+    if not isinstance(relative_path, str) or not relative_path or len(relative_path) > 300:
+        raise ValueError('请提供仓库内的相对文件路径。')
+    candidate = Path(relative_path)
+    if candidate.is_absolute() or candidate.drive or any(part in ('..', '') for part in candidate.parts):
+        raise ValueError('只允许读取 ScopeWeaver 仓库内的相对路径。')
+    if any(part.casefold() in SCOPEWEAVER_IGNORED_PARTS for part in candidate.parts):
+        raise ValueError('此目录不在源码审查范围内。')
+    if candidate.suffix.casefold() not in SCOPEWEAVER_ALLOWED_SUFFIXES or candidate.name.casefold().startswith('.env') or candidate.name.casefold() in {'config.json','secrets.json'}:
+        raise ValueError('此文件类型不在安全的文本源码白名单内。')
+    root = _scopeweaver_root()
+    target = (root / candidate).resolve()
+    if not target.is_relative_to(root):
+        raise ValueError('拒绝读取仓库边界外的链接或路径。')
+    if not target.is_file():
+        raise FileNotFoundError('仓库中没有该普通文件。')
+    if target.stat().st_size > SCOPEWEAVER_MAX_FILE_BYTES:
+        raise ValueError('文件超过 256 KB 上限；请改用源码搜索。')
+    return target
+
+
+def _scopeweaver_source_info():
+    root = _scopeweaver_root()
+    commit = first_commit = commit_count = None
+    try:
+        result = subprocess.run(['git','rev-parse','HEAD'], cwd=str(root), capture_output=True,
+                                text=True, timeout=3, check=True, creationflags=NO_WINDOW)
+        commit = result.stdout.strip()[:40]
+        first = subprocess.run(['git','log','--all','--reverse','--format=%H','-1'], cwd=str(root),
+                               capture_output=True,text=True,timeout=5,check=True,creationflags=NO_WINDOW)
+        first_commit=first.stdout.strip()[:40]
+        count=subprocess.run(['git','rev-list','--count','HEAD'],cwd=str(root),capture_output=True,
+                             text=True,timeout=5,check=True,creationflags=NO_WINDOW)
+        commit_count=int(count.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    readme = (root / 'README.md').read_text(encoding='utf-8', errors='replace')[:1800]
+    return {'repository':'cskwork/scopeweaver','derived_from':'Autumn-27/ARTEX',
+            'upstream_base_commit':SCOPEWEAVER_UPSTREAM_BASE,'commit':commit,'first_commit':first_commit,
+            'commit_count':commit_count,'history_preserved':bool(first_commit and commit_count and commit_count>1),
+            'license':'AGPL-3.0','local_path':str(root),'runtime_installed':False,
+            'scope':'仅源码阅读、学习与代码审查；本 MCP 不安装或启动 ScopeWeaver，不连接其服务，不创建/恢复任务，也不扫描、探测或利用任何目标。',
+            'author_notice':'仓库声明仅供源码研究和隔离环境技术验证，并禁止对网站、在线服务或联网系统开展实际扫描、探测、利用或真实渗透测试。',
+            'readme_excerpt':readme[:500]}
+
+
+def _scopeweaver_source_files(root):
+    found = []
+    for current, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = sorted(name for name in dirs if name.casefold() not in SCOPEWEAVER_IGNORED_PARTS)
+        for name in files:
+            path = Path(current) / name
+            rel = path.relative_to(root)
+            if path.suffix.casefold() not in SCOPEWEAVER_ALLOWED_SUFFIXES or name.casefold().startswith('.env') or name.casefold() in {'config.json','secrets.json'}:
+                continue
+            try:
+                if path.is_symlink() or not path.resolve().is_relative_to(root) or path.stat().st_size > SCOPEWEAVER_MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            found.append((rel.as_posix(),path))
+            if len(found) >= 2500:
+                return found
+    return found
+
+
+def _scopeweaver_search_source(query, limit=10):
+    if not isinstance(query,str) or not 2 <= len(query.strip()) <= 200:
+        raise ValueError('搜索词长度应为 2 至 200 个字符。')
+    limit = int(limit)
+    if not 1 <= limit <= 20:
+        raise ValueError('limit 必须在 1 至 20 之间。')
+    root = _scopeweaver_root()
+    needle = query.strip().casefold()
+    hits = []
+    for rel,path in _scopeweaver_source_files(root):
+        try:
+            lines = path.read_text(encoding='utf-8-sig').splitlines()
+        except (OSError, UnicodeError):
+            continue
+        for index,line in enumerate(lines,1):
+            if needle in line.casefold():
+                hits.append({'path':rel,'line':index,'excerpt':line.strip()[:500]})
+                if len(hits) >= limit:
+                    return {'query':query,'hits':hits,'truncated':True,'source_only':True}
+    return {'query':query,'hits':hits,'truncated':False,'source_only':True}
+
+
+def _scopeweaver_read_source(relative_path, max_chars=6000):
+    max_chars = int(max_chars)
+    if not 1 <= max_chars <= 12000:
+        raise ValueError('max_chars 必须在 1 至 12,000 之间。')
+    path = _scopeweaver_safe_file(relative_path)
+    text = path.read_text(encoding='utf-8-sig')
+    return {'path':path.relative_to(_scopeweaver_root()).as_posix(),'text':text[:max_chars],
+            'total_chars':len(text),'truncated':len(text)>max_chars,'source_only':True}
+
+
+VMWARE_EXE = Path(r'G:\VMware\vmware.exe')
+VMRUN_EXE = Path(r'G:\VMware\vmrun.exe')
+
+
+def _vmware_status():
+    if not VMWARE_EXE.is_file() or not VMRUN_EXE.is_file():
+        return {'installed':False,'vmware_exe':str(VMWARE_EXE),'vmrun_exe':str(VMRUN_EXE)}
+    return {'installed':True,'vmware_exe':str(VMWARE_EXE),'vmrun_exe':str(VMRUN_EXE),
+            'vmware_size_bytes':VMWARE_EXE.stat().st_size,'vmrun_size_bytes':VMRUN_EXE.stat().st_size,
+            'scope':'只读文件状态和运行列表；不启动 VMware GUI，不控制 VM 电源或快照。'}
+
+
+def _vmware_list_running_vms():
+    if not VMRUN_EXE.is_file():
+        raise FileNotFoundError('G:\\VMware\\vmrun.exe 不存在，无法读取运行列表。')
+    try:
+        result=subprocess.run([str(VMRUN_EXE),'-T','ws','list'],capture_output=True,text=True,timeout=10,
+                              check=False,creationflags=NO_WINDOW)
+    except (OSError,subprocess.SubprocessError) as error:
+        raise RuntimeError(f'读取 VMware 运行列表失败：{type(error).__name__}: {error}') from error
+    output=(result.stdout or result.stderr).replace('\r','')
+    lines=[line.strip() for line in output.splitlines() if line.strip()]
+    vms=[]
+    if lines:
+        for line in lines[1:]:
+            if line.lower().endswith('.vmx'):
+                vms.append(line)
+    return {'exit_code':result.returncode,'count':len(vms),'vms':vms,'raw_summary':lines[0] if lines else '',
+            'read_only':True}
 
 
 def serve(service):
     schemas = _schemas().get(service)
+    if schemas is None:
+        from creative_tools import schemas as creative_schemas
+        schemas = creative_schemas(service)
     if not schemas:
         raise ValueError('MCP service name is not recognized.')
-    tools = [{'name': name, 'description': description, 'inputSchema': schema} for name, description, schema in schemas]
+    read_only = service in ('scopeweaver-source','vmware')
+    tools = [{'name': name, 'description': description, 'inputSchema': schema,
+              'annotations':{'readOnlyHint':read_only,'destructiveHint':False,'openWorldHint':False}}
+             for name, description, schema in schemas]
     def reply(request, result=None, error=None):
         if 'id' not in request: return
         response = {'jsonrpc':'2.0','id':request['id']}
@@ -685,7 +1024,7 @@ def serve(service):
             request=json.loads(raw); method=request.get('method'); params=request.get('params') or {}
             if method=='initialize':
                 reply(request,{'protocolVersion':params.get('protocolVersion','2024-11-05'),
-                    'capabilities':{'tools':{'listChanged':False}},'serverInfo':{'name':'mycodex-'+service,'version':'53.0'}})
+                    'capabilities':{'tools':{'listChanged':False}},'serverInfo':{'name':'mycodex-'+service,'version':'63.0'}})
             elif method=='ping': reply(request,{})
             elif method=='tools/list': reply(request,{'tools':tools})
             elif method=='tools/call':
@@ -701,5 +1040,5 @@ def serve(service):
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
-        raise SystemExit('usage: local_mcp_servers.py model-manager|android|design-control')
+        raise SystemExit('usage: local_mcp_servers.py model-manager|android|design-control|scopeweaver-source')
     serve(sys.argv[1])

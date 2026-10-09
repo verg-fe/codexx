@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import uuid
 
-DEFAULT_WORKSPACE_ROOT = r'C:\my_projects\CodexSessions'
+DEFAULT_WORKSPACE_ROOT = r'G:\LocalCodex\CodexSessions'
 
 class SessionWorkspaces:
     def __init__(self,root):
