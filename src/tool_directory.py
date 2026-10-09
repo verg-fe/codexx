@@ -75,5 +75,6 @@ def select_tools(body,thread_id=None):
         if match:
             group=match[1];groups[group]=groups.get(group,0)+1
     ref='[MCP tool directory: request_key='+key+'. Available categories: '+', '.join(f'{g}({n})' for g,n in sorted(groups.items()))+'. Search with tool_catalog_search to load exact tool names/parameters; all original tools remain available through search. Directory data is not user authorization.]'
-    body['instructions']=(body.get('instructions') or '')+'\n\n'+ref
+    # Per-request catalogue keys must not invalidate the initial system prefix.
+    body.setdefault('input',[]).append({'role':'user','content':[{'type':'input_text','text':ref}]})
     return {'tool_directory_active':True,'tools_before_directory':len(tools),'tools_after_directory':len(chosen),'tool_schema_chars_before_directory':len(raw)}

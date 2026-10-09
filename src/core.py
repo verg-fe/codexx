@@ -21,6 +21,7 @@ import urllib.error
 
 ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
 PROMPT_CACHE_RAM_MIB = 8192
+PROMPT_CACHE_CHECKPOINTS = 4
 PROMPT_CACHE_DIRECTORY = Path(os.environ.get('LOCAL_CODEX_PROMPT_CACHE', r'G:\LocalCodex\cache'))
 
 def _model_directory():
@@ -60,8 +61,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-09-runtime-78'
-APP_VERSION = '2026-10-09-runtime-78'
+ADAPTER_VERSION = '2026-10-09-runtime-80'
+APP_VERSION = '2026-10-09-runtime-80'
 WORK_CONTEXT = 95000
 WORK_COMPACT = 92000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -683,6 +684,7 @@ def prompt_cache_policy_matches(current):
     except (OSError,RuntimeError,TypeError):
         return False
     return (current.get('prompt_cache_ram_mib')==PROMPT_CACHE_RAM_MIB
+            and current.get('prompt_cache_checkpoints')==PROMPT_CACHE_CHECKPOINTS
             and current.get('prompt_cache_idle_slots') is True
             and current.get('prompt_cache_enabled') is True
             and recorded==expected)
@@ -705,7 +707,7 @@ def model_args(name, context, settings=None):
             '--alias', name, '--host', '127.0.0.1', '--port', '8080',
             '--api-key', settings['api_key'], '-c', str(context),
             '-np', '1', '-fa', 'on', '-ctk', settings.get('kv_cache_type','q4_0'), '-ctv', settings.get('kv_cache_type','q4_0'),
-             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context, settings)), '--ctx-checkpoints', '4',
+             '--fit', 'off', '--load-mode', 'none', '-ngl', str(gpu_layers(name, context, settings)), '--ctx-checkpoints', str(PROMPT_CACHE_CHECKPOINTS),
             '--cache-prompt', '--cache-ram', str(PROMPT_CACHE_RAM_MIB), '--cache-idle-slots',
             '-b', '512', '-ub', '128', '-t', '2' if not settings.get('cpu_offload',False) and cache_location=='gpu' else '6', '--jinja',
             '--chat-template-kwargs', json.dumps({'enable_thinking':True,'preserve_thinking':True,'reasoning_effort':settings.get('reasoning_effort','xhigh')}),
@@ -992,6 +994,7 @@ def _start_model(name, context, wait, ceiling=None, settings=None):
         'vision_gpu_offload':settings.get('vision_gpu_offload',True),
         'kv_cache_type':settings.get('kv_cache_type','q4_0'),
         'prompt_cache_enabled':True,'prompt_cache_ram_mib':PROMPT_CACHE_RAM_MIB,
+        'prompt_cache_checkpoints':PROMPT_CACHE_CHECKPOINTS,
         'prompt_cache_idle_slots':True,'prompt_cache_directory':str(PROMPT_CACHE_DIRECTORY),
         'isolated_console':True,'chat_template_policy':desired_template['policy'],
         'chat_template_sha256':desired_template.get('sha256'),

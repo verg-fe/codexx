@@ -10,7 +10,7 @@ IDA={'type':'function','name':'mcp__ida_local__ida_status','description':'IDA st
 TOOLS=[SEARCH,PHONE,IDA,{'type':'function','name':'exec_command','parameters':{}}]
 def body(text='测试手机'):
     return {'instructions':'rules','input':[{'role':'user','content':[{'type':'input_text','text':text}]}],'tools':copy.deepcopy(TOOLS)}
-def key(b):return re.search(r'request_key=([0-9a-f]{32})',b['instructions'])[1]
+def key(b):return re.search(r'request_key=([0-9a-f]{32})',json.dumps(b['input']))[1]
 
 class Reductions(unittest.TestCase):
     def setUp(self):
@@ -22,6 +22,10 @@ class Reductions(unittest.TestCase):
         self.tmp.cleanup()
     def test_catalog_only_and_native_initially(self):
         b=body();s=d.select_tools(b,'thread');self.assertEqual(s['tools_after_directory'],2)
+        self.assertEqual(b['instructions'],'rules')
+    def test_directory_does_not_change_system_prefix_on_new_task(self):
+        a=body('任务A');b=body('任务B');d.select_tools(a,'thread');d.select_tools(b,'thread')
+        self.assertEqual(a['instructions'],b['instructions']);self.assertNotEqual(key(a),key(b))
     def test_search_preserves_schema_and_enables_original(self):
         b=body();d.select_tools(b,'thread');result=d.search(key(b),'android_ui_click')
         self.assertEqual(result['matches'][0],PHONE)

@@ -528,7 +528,8 @@ class App(ctk.CTk):
         buttons = ctk.CTkFrame(parent, fg_color='transparent')
         buttons.grid(row=6, column=0, sticky='w', padx=24, pady=15)
         self.button(buttons, '启动模型', self.launch_model, fg_color=ACCENT, text_color=BG).pack(side='left', padx=4)
-        self.button(buttons, '释放显存', self.unload_model).pack(side='left', padx=4)
+        self.unload_button=self.button(buttons, '释放显存', self.unload_model)
+        self.unload_button.pack(side='left', padx=4)
         self.button(buttons, '打开运行日志', lambda: os.startfile(ROOT / 'logs')).pack(side='left', padx=4)
         self.button(buttons, '模型调研报告', lambda: os.startfile(ROOT / '模型调研与使用说明.md')).pack(side='left', padx=4)
         options = ctk.CTkFrame(parent, fg_color='#222831')
@@ -1186,14 +1187,21 @@ class App(ctk.CTk):
         self.background(work)
 
     def unload_model(self):
+        if getattr(self,'unloading_model',False):return
         if self.busy or self.loading_model:
             messagebox.showinfo('正在运行', '请先停止当前任务，再释放显存。')
             return
+        self.unloading_model=True
+        self.unload_button.configure(text='正在释放…',state='disabled')
         def work():
-            if server_ready() and any(slot.get('is_processing') for slot in api('/slots')):
-                raise RuntimeError('本地模型正在处理其他会话，请等任务完成后再释放显存。')
-            stop_model()
-            self.model_proc=None
+            try:
+                if server_ready() and any(slot.get('is_processing') for slot in api('/slots')):
+                    raise RuntimeError('本地模型正在处理其他会话，请等任务完成后再释放显存。')
+                stop_model()
+                if server_ready():raise RuntimeError('模型仍在运行，请检查模型进程所有权。')
+                self.events.put({'local':'model_unloaded','ok':True})
+            except Exception as error:
+                self.events.put({'local':'model_unloaded','ok':False,'text':str(error)})
         self.background(work)
 
     def send_prompt(self):
@@ -1453,6 +1461,13 @@ class App(ctk.CTk):
                 self.append('\n› 本地接口暂时不能安全切换，正在自动等待并重试；保留已有任务，无需反复重开。\n',save=False)
             self.usage.configure(text='等待本地接口安全切换 · 自动重试 '+str(event.get('attempt',1))+'/60')
             self.after(2000,lambda:self.background(self.connect))
+        elif local == 'model_unloaded':
+            self.unloading_model=False
+            self.unload_button.configure(text='释放显存',state='normal')
+            if event.get('ok'):
+                self.model_proc=None
+                self.append('\n› 模型已停止，模型占用的显存已释放。下次发送任务时重新加载。\n',save=False)
+            else:self.append('\n⚠ 释放失败：'+event.get('text','未知错误')+'\n',save=False)
         elif local == 'error':
             if self.turn_id is None:self.release_artifact_locks()
             if self.mobile_job_id and self.mobile_inbox:

@@ -190,3 +190,4 @@ def main():
         'scopeweaver_and_vmware_readonly_calls_passed':True},ensure_ascii=False))
 
 if __name__=='__main__': main()
+

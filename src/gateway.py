@@ -19,6 +19,7 @@ from vision_history import archive_observed_tool_images
 from ui_image_gate import defer_ui_tool_images
 from request_context import prune_reference_tails,prompt_sizes,reduce_history
 from tool_directory import select_tools
+from prefix_diagnostics import observe as observe_prefix
 from history_memory import HistoryMemory, archive_thread_id
 from task_artifacts import TaskArtifacts
 from core import (ROOT, api, load_settings, MODELS, selected_model, context_for, start_model,
@@ -353,6 +354,7 @@ def count_prompt_tokens(body, route):
         chat['messages']=messages
         prompt=api('/apply-template',chat,timeout=30)['prompt']
     tokens=api('/tokenize',{'content':prompt,'add_special':True,'parse_special':True},timeout=30)['tokens']
+    body['_prefix_diagnostics']=observe_prefix(tokens,body,image_count)
     return len(tokens)+image_count*2048
 
 def request_output_reserve(body):
@@ -392,6 +394,7 @@ def route_inference(body, route, settings, name, media_converted=0, vision_stats
         'media_converted_to_png':media_converted,
         'phase':'switching' if previous.get('context')!=target else 'ready'}
     record.update(vision_stats or {})
+    record.update(body.pop('_prefix_diagnostics',{}))
     record['request_started_at']=time.time()
     record.update(fitted)
     thread_id=archive_thread_id(body.get('instructions'))

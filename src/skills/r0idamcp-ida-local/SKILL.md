@@ -58,3 +58,4 @@ The launcher changes only its child process environment; it does not modify glob
 - The overall Android action “add Baidu to X Browser bookmarks” remains incomplete. ADB shell input and UIAutomator injection were denied with Android `INJECT_EVENTS`; do not bypass this with root. The IDA DEX read-only chain is verified, but it is not an end-to-end bookmark action.
 - A temporary partial clone directory is present at `G:/LocalCodex-work/mycodex-repair-20261009/artifacts/xbrower-bookmark-chain/ida-write-test-clone`; its three files are copies created during the blocked clone attempt. It was not opened or modified. Keep it separate from the verified original.
 - The last launcher start did not show a Windows publisher prompt; this does not mean or imply that the warning was suppressed. Do not auto-accept or weaken Windows security.
+

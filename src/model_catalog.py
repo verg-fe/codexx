@@ -159,3 +159,4 @@ class ModelCatalog(Mapping):
                 'sha256': digest, 'expected_sha256': wanted, 'hash_verified': bool(wanted and digest),
                 'architecture': row.get('architecture'), 'runtime_test_required': True,
                 'status': 'files_validated_runtime_pending'}
+

@@ -1,0 +1,42 @@
+{
+  "version": "v80",
+  "cache": {
+    "directory": "G:\\LocalCodex\\cache",
+    "prompt_cache": true,
+    "checkpoints": 4,
+    "ram_mib": 8192,
+    "type": "q4_0",
+    "idle_slots": true
+  },
+  "settings": {
+    "compact": 92000,
+    "context": 95000,
+    "vision_gpu_offload": false
+  },
+  "source": "v76 KV cache flags with v79 additions audited",
+  "runtime": {
+    "adapter_version": "2026-10-09-runtime-80",
+    "kv_hit_rate": "not measured",
+    "slots": "502 backend connection refused",
+    "authenticated_health": "ok"
+  },
+  "audit": {
+    "v79_other": "guarded VRAM unload UI; prefix comparison diagnostics",
+    "prefix_metric": "template token-prefix comparison, not actual llama.cpp KV hits",
+    "v78_inherited_context_changes": [
+      "archive/summarize long historical tool outputs",
+      "merge adjacent bare continue messages",
+      "prune generated reference tails",
+      "searchable/dynamic MCP tool schema selection"
+    ],
+    "v79_direct_kv_change": "ctx-checkpoints 4 -> 16"
+  },
+  "package": {
+    "exe": "G:\\LocalCodex-work\\mycodex-repair-20261009\\deploy\\MyCodex-v80-kv-match\\MyCodex\\MyCodex.exe",
+    "sha256": "F41E4DE10176AD447B99E876B9BC77453E8335A25BA5CA85EA4CB1C66F1FE64D"
+  },
+  "launcher": {
+    "sha256": "CF11DA7761AF74148B212669C621463051EEB0972DD6966540B211FC41CF16F7",
+    "path": "C:\\Users\\18213\\Desktop\\我的Codex.cmd"
+  }
+}
