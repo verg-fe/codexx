@@ -122,7 +122,8 @@ def normalize_media(body):
         nonlocal converted
         if not isinstance(blocks,list):
             return
-        for block in blocks:
+        references=[]
+        for index,block in enumerate(blocks):
             if not isinstance(block,dict) or block.get('type') not in ('input_image','image_url'):
                 continue
             value=block.get('image_url')
@@ -133,6 +134,17 @@ def normalize_media(body):
                 url,changed=compatible_image_url(value)
                 block['image_url']=url
             converted+=int(changed)
+            encoded_url=url
+            if isinstance(encoded_url,str) and encoded_url.startswith('data:image/'):
+                try:
+                    raw=base64.b64decode(encoded_url.split(',',1)[1],validate=True)
+                    with Image.open(io.BytesIO(raw)) as coordinate_image:
+                        width,height=coordinate_image.size
+                    reference=f'[Image coordinate reference: encoded image {width}x{height}. For UI pointing return normalized x,y in [0,1] relative to image content, then use coordinate mapping tools. Encoded/preview pixels are not necessarily device or desktop pixels; do not tap them directly.]'
+                    if index==0 or not isinstance(blocks[index-1],dict) or blocks[index-1].get('text')!=reference:
+                        references.append((index,{'type':'input_text' if block.get('type')=='input_image' else 'text','text':reference}))
+                except (ValueError,OSError,Image.DecompressionBombError):pass
+        for index,reference in reversed(references):blocks.insert(index,reference)
     for field in ('input','messages'):
         items=body.get(field)
         if isinstance(items,list):

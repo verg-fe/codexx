@@ -15,7 +15,7 @@ from task_artifacts import DraftStream
 METADATA_FIELDS = ('thread_id', 'model', 'context_limit', 'runtime_context', 'kv_cache_location',
                    'prompt_tokens', 'reasoning_budget', 'media_converted_to_png', 'backend',
                    'retained_execution_failures', 'artifact_task_id')
-METADATA_FIELDS += ('archived_tool_images', 'pending_tool_images', 'user_images', 'request_started_at')
+METADATA_FIELDS += ('archived_tool_images', 'stale_tool_images', 'pending_tool_images', 'user_images', 'request_started_at')
 DELTA_CHANNELS = {
     'response.reasoning_text.delta': 'reasoning',
     'response.reasoning_summary_text.delta': 'reasoning_summary',

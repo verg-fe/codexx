@@ -16,3 +16,20 @@ description: 用于 Android App 开发、界面操作与调试、点击回调、
 7. 用户要求实测时检查真实截图、触发日志和两个时间戳。1000ms 定时器不意味着界面恰在1000ms绘制完，应报告实测差值。重复点击以及停止/重载要覆盖。
 
 不根据单次导入内部模块失败判定客户端损坏；不根据DONE、端口存在或进程存活判定界面成功。故障修复后回到用户要求的界面效果，别反复研究已通过环节。
+
+## 点击定位与失败恢复
+
+- 先调用 android_accessibility_tree 和 android_screenshot，使用当前控件的 resource-id、text 或 content-desc 匹配唯一目标；从最新 bounds 取中心坐标。文字节点不可点击时找包含它的可点击祖先，不点其他聊天条目来试坐标。
+- 自绘控件没有树节点时，读取原始 PNG 宽高并核对显示图是否缩放或裁剪。只有已知缩放比例和裁剪偏移才可换算截图坐标到设备坐标；不知道映射就重新获取原始截图。不能把缩放图片上的坐标直接交给 input tap。
+- 每次点击、返回、取消、滚动或键盘弹出后，重新检查树与截图，并以预期页面、目标标题或控件变化判断是否成功。命令退出码 0 只表示输入命令执行，不能宣称进入聊天或返回成功。
+- 用户说“没点上”时，将上一动作标记为失败；重新读取当前页面再定位，不基于原先假定的页面继续。KEYCODE_BACK 可能只关闭键盘或先改变焦点，必须检查结果。
+- 同一目标连续两次未达到预期状态就停止盲目点击，保留截图和树，诊断焦点、遮挡、实际坐标映射或输入权限；禁止通过改变 y 值反复猜位置。普通触屏点击优先 input tap，不使用未经设备触摸协议核对的 sendevent 序列。
+- 上下文压缩只保留目标、最后已验证页面、失败动作和证据路径；恢复执行时先刷新画面和树。旧截图坐标不得当作当前坐标，页面状态不明确时不得进行发送、确认或位置共享等操作。
+
+## 坐标工具与视觉回退
+
+定位顺序：当前控件树 → 已知图标的 CPU 图样匹配 → 陌生/自绘控件才调用 CPU 视觉。手机工具使用 android_coordinates MCP（也在新版本 android MCP 中）：android_ui_snapshot、android_ui_locate、android_ui_icon_template、android_ui_icon_find、android_ui_map_point、android_ui_click。文字在 content-desc 中时选择 field=description、match_mode=contains，并核对唯一候选。snapshot 返回原图尺寸、编号图、候选 bounds 和 snapshot_id；点击参数必须使用该次 snapshot_id。页面变化或快照过期时工具会拒绝点击，重新定位。不要绕开工具继续用 shell 猜坐标。
+
+视觉回退优先给出图像内容中的归一化点 x,y（0 到 1），用 android_ui_map_point 的 display_width=1、display_height=1 换算到手机原图。若使用缩放图像素坐标，则提供实际显示图宽高，裁剪时还要给原图 crop。已知图样可从原图 bounds 保存模板，再在新 snapshot 用 icon_find 定位；图样相似不等于语义正确，有多个候选时不直接点。
+
+电脑先使用 windows_desktop 的 Snapshot/UIA 和 DisplayInventory。截图回退调用 android_coordinates.screen_map_point，提供真实截图路径和归一化坐标；需要桌面点击坐标时，必须取得截图后端报告的 physical_capture_bounds。负数多屏原点、窗口截图范围、DPI 物理/逻辑坐标要核对。缺少范围时工具只返回图像坐标，不能当作桌面坐标直接点击。点击后用新控件树与截图核验实际结果。

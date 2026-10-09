@@ -18,6 +18,7 @@ import urllib.request
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
+import android_coordinates
 
 ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
 ADB = Path(os.environ.get('LOCAL_CODEX_ADB', r'C:\Users\18213\AppData\Local\VectorAndroidSdk\platform-tools\adb.exe'))
@@ -764,6 +765,7 @@ def _stop_design_app(name):
 
 def _schemas():
     return {
+        'android-coordinates': android_coordinates.schemas(),
         'model-manager': [
             ('model_list', '列出内置和本地注册的 GGUF 模型。', {'type':'object','properties':{}}),
             ('model_search', '搜索真实公开发布的 Hugging Face 文本生成模型。', {'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer','default':20}},'required':['query']}),
@@ -789,7 +791,7 @@ def _schemas():
             ('android_accessibility_tree', '导出设备当前 UIAutomator XML 无障碍树。', {'type':'object','properties':{}}),
             ('android_screenshot', '保存并验证真实二进制 PNG 设备截图。', {'type':'object','properties':{'destination':{'type':'string','default':''}}}),
             ('android_logcat', '读取最近设备日志；给出包名时按进程 PID 定向。', {'type':'object','properties':{'package_name':{'type':'string','default':''},'lines':{'type':'integer','default':300}}}),
-        ],
+        ] + android_coordinates.schemas(),
         'design-control': [
             ('design_status', '查询 Blender/FreeCAD 受管进程、RPC 端口和任务目录。', {'type':'object','properties':{}}),
             ('blender_start', '按需启动受管 Blender 图形界面并等待 MCP 插件连接。', {'type':'object','properties':{'job_dir':{'type':'string','default':''}}}),
@@ -810,6 +812,9 @@ def _schemas():
 
 
 def _dispatch(service, name, args):
+    if service in ('android','android-coordinates') and name=='screen_map_point':
+        from screen_coordinates import map_point
+        return map_point(**args)
     if service == 'voice':
         from creative_tools import dispatch
         return dispatch(ROOT, service, name, args)
@@ -832,6 +837,8 @@ def _dispatch(service, name, args):
             rows = json.loads(history.read_text(encoding='utf-8')) if history.exists() else []
             if len(rows) < 2: raise ValueError('还没有足够的成功切换记录用于回退。')
             return _model_activate(rows[-2]['model_id'])
+    if service in ('android','android-coordinates') and name.startswith('android_ui_'):
+        return android_coordinates.dispatch(name,args,_adb,_screenshot,_require_device)
     if service == 'android':
         if name == 'android_devices': return _device_list()
         if name == 'android_device_info': return _device_info()

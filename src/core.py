@@ -60,8 +60,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-09-runtime-70'
-APP_VERSION = '2026-10-09-runtime-70'
+ADAPTER_VERSION = '2026-10-09-runtime-73'
+APP_VERSION = '2026-10-09-runtime-73'
 WORK_CONTEXT = 93000
 WORK_COMPACT = 87000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -78,6 +78,13 @@ Keep internal checks brief. For file or artifact tasks, use tools after a short 
 than repeatedly rehearsing the implementation. Give a visible result after completing the work.
 Read applicable AGENTS.md. Search with rg first, list relevant paths, then read only necessary
 functions and line ranges. Do not dump whole repositories, logs, lockfiles or generated files.
+UI automation on Android and Windows: locate controls in the current accessibility tree first;
+then use known icon templates on CPU; request CPU vision only for unfamiliar/custom-drawn UI.
+Use android_ui_snapshot/locate/icon_find/click for Android and native UI Automation for Windows.
+For visual fallback, report normalized coordinates (x,y in [0,1]) relative to image content.
+Never treat a displayed/resized image point as original device coordinates. Use android_ui_map_point
+or screen_map_point; desktop physical capture bounds, monitor origin and click API DPI units must
+be known. After navigation refresh evidence; a successful input command is not a successful UI action.
 Keep shell output under 200 lines and normally under 2000 tokens. After edits, run appropriate
 targeted checks. Use apply_patch for edits. Keep changes small and preserve unrelated work.
 Before compaction preserve the objective, decisions, important paths, work done, failing checks
@@ -511,7 +518,7 @@ sandbox = "unelevated"
     else:
         local_mcp_command=sys.executable
         local_mcp_args=lambda service:[str(Path(__file__).parent/'local_mcp_servers.py'),service]
-    local_services=['model-manager','android','design-control','voice']
+    local_services=['model-manager','android','android-coordinates','design-control','voice']
     if Path(r'G:\LocalCodex-work\scopeweaver-review-20261009\README.md').is_file():
         local_services.append('scopeweaver-source')
     if Path(r'G:\VMware\vmrun.exe').is_file():
@@ -612,6 +619,7 @@ def mcp_skill_index(prompt='', root=None):
         'web_research':('搜索网页','网上查','新闻','来源','网页检索','实时信息'),
         'local_history':('技能','历史','会话记录','备忘录'),
         'ida_local':('ida','反编译','二进制分析','函数地址'),
+        'android_coordinates':('手机','安卓','android','点击','图标','坐标','截图','屏幕','桌面'),
         'scopeweaver_source':('scopeweaver','scope weaver','源码审查 scopeweaver','ScopeWeaver源码'),
         'vmware':('vmware','虚拟机','vmx','vmrun'),
     }
@@ -644,7 +652,8 @@ def api(path, body=None, timeout=5):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request('http://127.0.0.1:8080' + path, data=data,
           headers={'Authorization': 'Bearer ' + settings['api_key'], 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=timeout) as response:
         if moe and path=='/health':return {'status':'ok'}
         return json.load(response)
 

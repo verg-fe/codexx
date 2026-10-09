@@ -1096,10 +1096,18 @@ class App(ctk.CTk):
         try:
             refresh_gateway_for_current_app()
             self.rpc = RpcClient(self.events.put)
+            self.connection_retry_count = 0
             self.events.put({'local': 'connected'})
             if self.rpc.proxy_error:
                 self.events.put({'local':'proxy_unavailable'})
         except Exception as e:
+            waiting_reasons=('模型进程的状态暂时无法读取','旧会话仍在推理','旧会话仍在执行工具','本地接口状态刚发生变化')
+            if isinstance(e,RuntimeError) and any(reason in str(e) for reason in waiting_reasons):
+                count=getattr(self,'connection_retry_count',0)+1
+                self.connection_retry_count=count
+                if count<=60:
+                    self.events.put({'local':'connection_wait','attempt':count,'text':str(e)})
+                    return
             self.events.put({'local': 'error', 'text': str(e)})
 
     def poll_server_health(self):
@@ -1438,6 +1446,11 @@ class App(ctk.CTk):
                     except Exception:pass
         elif local=='mobile_job':
             self.accept_mobile_job(event['job'])
+        elif local == 'connection_wait':
+            if event.get('attempt')==1:
+                self.append('\n› 本地接口暂时不能安全切换，正在自动等待并重试；保留已有任务，无需反复重开。\n',save=False)
+            self.usage.configure(text='等待本地接口安全切换 · 自动重试 '+str(event.get('attempt',1))+'/60')
+            self.after(2000,lambda:self.background(self.connect))
         elif local == 'error':
             if self.turn_id is None:self.release_artifact_locks()
             if self.mobile_job_id and self.mobile_inbox:

@@ -9,17 +9,20 @@ IMAGE_TYPES = {'input_image', 'image_url', 'image'}
 
 
 def archive_observed_tool_images(body):
-    stats = {'archived_tool_images': 0, 'pending_tool_images': 0, 'user_images': 0}
+    stats = {'archived_tool_images': 0, 'stale_tool_images': 0, 'pending_tool_images': 0, 'user_images': 0}
     items = body.get('input')
     if not isinstance(items, list):
         return stats
     calls = {item.get('call_id'): item for item in items
              if isinstance(item, dict) and item.get('type') in ('function_call', 'custom_tool_call')}
     observed = False
+    newer_user_instruction = False
     for item in reversed(items):
         if not isinstance(item, dict):
             continue
         kind = item.get('type')
+        if item.get('role') == 'user':
+            newer_user_instruction = True
         if kind in ('reasoning', 'function_call', 'custom_tool_call') or item.get('role') == 'assistant':
             observed = True
         content = item.get('output') if kind == 'function_call_output' else item.get('content')
@@ -28,20 +31,30 @@ def archive_observed_tool_images(body):
         call = calls.get(item.get('call_id'), {})
         name = str(call.get('name') or '').lower()
         screenshot = ('view_image' in name or 'screenshot' in name)
+        try:
+            arguments = json.loads(call.get('arguments') or '{}')
+            path = arguments.get('path') or arguments.get('image_path') or arguments.get('destination') or ''
+        except (ValueError, TypeError, AttributeError):
+            path = ''
+        ui_path = str(path).replace('\\','/').lower()
+        stale_ui = newer_user_instruction and ('screenshot' in name or any(marker in ui_path for marker in ('/logs/android/','/android-ui-jobs/','/screenshots/','/screen-')))
         for index, block in enumerate(content):
             if not isinstance(block, dict) or block.get('type') not in IMAGE_TYPES:
                 continue
             if kind != 'function_call_output':
                 stats['user_images'] += 1
                 continue
+            if stale_ui and not observed:
+                content[index] = {'type': 'input_text', 'text':
+                    '[Historical UI screenshot from before the latest user instruction. The current '
+                    'page is unverified: use the current accessibility tree first, then known icon '
+                    'matching; request a fresh CPU vision image only for unfamiliar/custom UI. '
+                    'Do not reuse old coordinates. Original: ' + (str(path) or str(item.get('call_id'))) + ']'}
+                stats['stale_tool_images'] += 1
+                continue
             if not (screenshot and observed):
                 stats['pending_tool_images'] += 1
                 continue
-            try:
-                arguments = json.loads(call.get('arguments') or '{}')
-                path = arguments.get('path') or arguments.get('image_path') or ''
-            except (ValueError, TypeError, AttributeError):
-                path = ''
             content[index] = {'type': 'input_text', 'text':
                 '[Previously observed tool screenshot. Its visual observation is in the following '
                 'assistant messages; do not repeat the screenshot solely to inspect unchanged state. '
