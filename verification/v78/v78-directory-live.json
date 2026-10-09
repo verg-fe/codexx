@@ -1,0 +1,14 @@
+{
+  "packaged_directory_search": true,
+  "original_schema_preserved": true,
+  "selected_original_tool_enabled": true,
+  "original_android_devices_call_completed": true,
+  "device_result_type": "dict",
+  "catalogue_scope": "Only local MCP schemas in the source registry, not the complete live native client catalogue. No phone UI action, install or message performed.",
+  "original_tool_count": 58,
+  "initial_tool_count": 2,
+  "after_one_search_tool_count": 3,
+  "tool_schema_tokens_before": 5826,
+  "tool_schema_tokens_after": 188,
+  "measurement_scope": "Tokenization of tool-schema JSON only; not the total Huihui request."
+}

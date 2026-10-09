@@ -1,0 +1,1 @@
+{"gateway": "2026-10-09-runtime-78", "health": "ok", "context": 95000, "limits": [95000, 92000], "vision_gpu_offload": false, "kv_cache_type": "q4_0", "tool_directory_configured": true}

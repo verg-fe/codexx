@@ -60,8 +60,8 @@ BACKENDS = {
     'hip': {'label': 'AMD HIP · ROCm 10.0', 'directory': 'runtime-hip', 'device': 'ROCm0'},
     'moe4all': {'label': 'MoE4All 0.9 · RAM 辅助 · 纯文字', 'directory': 'runtime-moe4all/MoE4All-Windows-x86_64-v0.9.0', 'device': 'Vulkan0', 'executable': 'infr.exe'},
 }
-ADAPTER_VERSION = '2026-10-09-runtime-76'
-APP_VERSION = '2026-10-09-runtime-76'
+ADAPTER_VERSION = '2026-10-09-runtime-78'
+APP_VERSION = '2026-10-09-runtime-78'
 WORK_CONTEXT = 95000
 WORK_COMPACT = 92000
 WORK_CONTEXT_OPTIONS = (16,24,32,48,64,70,72,75,95,*range(100,231,10))
@@ -122,6 +122,7 @@ Explain limitations
 plainly. Prefer a brief final answer with what changed and what was actually tested.'''
 
 INSTRUCTIONS += '\n技能按任务需要读取；不要预先注入或罗列整份技能目录。\n'
+INSTRUCTIONS += '\n有 MCP 工具目录时，先读目录类别；需要尚未加载的工具，调用 tool_catalog_search 获取原始名称和参数，再使用原始 MCP。未知参数必须查目录，不能用猜测的调用或任意 shell 命令替代。历史输出的 full_output_path 保存完整日志，诊断需要时通过 local_read_text 分段读取。\n'
 INSTRUCTIONS += '''\nMCP call contracts: Photoslop accepts source and output paths only under G:\\LocalCodex\\image-jobs; when an uploaded or generated input is elsewhere, copy it into that folder before calling document_info/edit_image. Shotcut shotcut_trim requires output_name to be a new basename ending in .mp4 (no directory component); outputs go under G:\\LocalCodex\\video-jobs and must not overwrite. For Windows Desktop WaitFor, always include window_name when waiting for a particular window or its controls; active_window requires window_name (or text), text_exists requires text, and element waits should include both text and window_name when scoped. Use a short finite timeout and verify the observed result before continuing. These are call requirements, not reasons to change valid MCP implementations.\n'''
 INSTRUCTIONS += '''
 Task execution stages (use these to decide your NEXT ACTION, do not endlessly restate a plan):
@@ -529,7 +530,7 @@ sandbox = "unelevated"
     else:
         local_mcp_command=sys.executable
         local_mcp_args=lambda service:[str(Path(__file__).parent/'local_mcp_servers.py'),service]
-    local_services=['model-manager','android','android-coordinates','design-control','voice']
+    local_services=['model-manager','android','android-coordinates','design-control','voice','tool-directory']
     if Path(r'G:\LocalCodex-work\scopeweaver-review-20261009\README.md').is_file():
         local_services.append('scopeweaver-source')
     if Path(r'G:\VMware\vmrun.exe').is_file():

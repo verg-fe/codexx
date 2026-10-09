@@ -1245,7 +1245,9 @@ class App(ctk.CTk):
             self.artifact_locks.close()
             self.artifact_task,self.artifact_locks=TaskArtifacts(ROOT).begin(self.thread_id,project,prompt,images)
             self.events.put({'local':'task_artifacts','state':self.artifact_task})
-            turn_context=memory_instructions(self.thread_id)+TaskArtifacts(ROOT).instructions(self.thread_id)
+            turn_context=f'Local history archive thread_id: {self.thread_id}\n'
+            turn_context+='历史详情按需调用 history_search/history_read；固定操作说明已在系统提示中。\n'
+            turn_context+=TaskArtifacts(ROOT).instructions(self.thread_id)
             turn_context+=self.workspace_store.instructions(self.session_workspace)
             turn_context+='\n'+mcp_skill_index(prompt)
             turn_context+='技能索引只附加给本次用户指令；不重复罗列，按需调用实际可用工具，优先短答并避免复述已知背景。\n'

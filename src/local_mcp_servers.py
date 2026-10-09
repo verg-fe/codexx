@@ -764,7 +764,9 @@ def _stop_design_app(name):
 
 
 def _schemas():
+    from tool_directory import SCHEMA as DIRECTORY_SCHEMA
     return {
+        'tool-directory':[DIRECTORY_SCHEMA],
         'android-coordinates': android_coordinates.schemas(),
         'model-manager': [
             ('model_list', '列出内置和本地注册的 GGUF 模型。', {'type':'object','properties':{}}),
@@ -812,6 +814,9 @@ def _schemas():
 
 
 def _dispatch(service, name, args):
+    if service=='tool-directory' and name=='tool_catalog_search':
+        from tool_directory import search
+        return search(**args)
     if service in ('android','android-coordinates') and name in ('screen_prepare_vision','screen_map_prepared_point'):
         from vision_crop import prepare,map_view
         return (prepare if name=='screen_prepare_vision' else map_view)(**args)

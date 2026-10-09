@@ -17,6 +17,8 @@ from PIL import Image, ImageOps
 from generation_trace import GenerationTrace
 from vision_history import archive_observed_tool_images
 from ui_image_gate import defer_ui_tool_images
+from request_context import prune_reference_tails,prompt_sizes,reduce_history
+from tool_directory import select_tools
 from history_memory import HistoryMemory, archive_thread_id
 from task_artifacts import TaskArtifacts
 from core import (ROOT, api, load_settings, MODELS, selected_model, context_for, start_model,
@@ -200,6 +202,7 @@ def retain_execution_state(body,memory=None):
     return len(state['failures'])
 
 def normalize(body):
+    body['_reference_pruning_stats']=prune_reference_tails(body)
     body['reasoning_budget_tokens']=reasoning_budget()
     body.pop('thinking_budget_tokens',None)
     # Native Codex groups MCP tools in Responses namespaces. llama.cpp needs
@@ -222,13 +225,16 @@ def normalize(body):
     if not isinstance(inputs, list):
         return body
     instructions = [body['instructions']] if body.get('instructions') else []
+    reference_thread=body['_reference_pruning_stats'].get('thread_id')
+    if reference_thread and not archive_thread_id(body.get('instructions')):
+        instructions.append('Local history archive thread_id: '+reference_thread)
     kept = []
     for item in inputs:
         if isinstance(item, dict) and item.get('role') in ('system', 'developer'):
             instructions.append(content_text(item.get('content')))
         else:
             kept.append(item)
-    body['instructions'] = '\n\n'.join(instructions)
+    body['instructions'] = '\n\n'.join(dict.fromkeys(x for x in instructions if x))
     body['input'] = kept
     for item in kept:
         if isinstance(item,dict) and item.get('type') == 'custom_tool_call':
@@ -535,9 +541,14 @@ class Handler(BaseHTTPRequestHandler):
                 if route == '/v1/responses':
                     tool_routes,custom_names = tool_response_routes(body.get('tools',[]))
                     body = normalize(body)
+                    reference_stats=body.pop('_reference_pruning_stats',{})
                     deferred_ui_images=defer_ui_tool_images(body)
                     vision_stats=archive_observed_tool_images(body)
                     vision_stats['deferred_ui_images']=deferred_ui_images
+                    vision_stats.update(reference_stats)
+                    directory_stats=select_tools(body,archive_thread_id(body.get('instructions')))
+                    vision_stats.update(directory_stats)
+                    vision_stats.update(reduce_history(body))
                     try:
                         retained_failures=retain_execution_state(body)
                     except (OSError,ValueError,sqlite3.Error) as error:
@@ -563,6 +574,7 @@ class Handler(BaseHTTPRequestHandler):
                 if tool_execution_enabled and route=='/v1/responses':
                     append_runtime_state(body,BATCH_GUIDANCE)
                 media_converted=normalize_media(body)
+                vision_stats.update(prompt_sizes(body))
                 routing = route_inference(body,route,settings,name,media_converted,vision_stats)
                 if selected_backend(settings)=='moe4all':
                     from moe4all_backend import normalize_request

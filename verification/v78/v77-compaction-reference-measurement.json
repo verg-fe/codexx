@@ -1,0 +1,15 @@
+{
+  "compaction_timestamp": "2026-10-09T07:50:35.719Z",
+  "summary_characters": 3848,
+  "replacement_items": 54,
+  "reference_pruning": {
+    "historical_reference_blocks_removed": 16,
+    "historical_reference_chars_removed": 64977
+  },
+  "retained_message_text_tokens_before": 27477,
+  "retained_message_text_tokens_after": 6852,
+  "text_tokens_removed": 20625,
+  "measurement_scope": "Model tokenizer over retained message text only. Excludes system instructions, tool schemas and chat-template overhead; not the complete next request token count.",
+  "real_user_text_preserved": true,
+  "source_archive_modified": false
+}
