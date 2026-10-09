@@ -18,6 +18,7 @@ from generation_trace import GenerationTrace
 from vision_history import archive_observed_tool_images
 from ui_image_gate import defer_ui_tool_images
 from tool_directory import register_tools
+from request_continuity import reconcile
 from history_memory import HistoryMemory, archive_thread_id
 from task_artifacts import TaskArtifacts
 from core import (ROOT, api, load_settings, MODELS, selected_model, context_for, start_model,
@@ -500,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length',str(len(result)));self.end_headers();self.wfile.write(result)
             return
         if self.command == 'GET' and route in ('/health','/v1/models'):
-            data={'status':'ok','adapter_version':ADAPTER_VERSION} if route=='/health' else {
+            data={'status':'ok','adapter_version':ADAPTER_VERSION,'request_continuity':'historical-boundaries-v1'} if route=='/health' else {
                 'object':'list', 'data':[{'id':name,'object':'model','owned_by':'local','created':0} for name in MODELS]}
             result=json.dumps(data).encode()
             self.send_response(200)
@@ -539,6 +540,7 @@ class Handler(BaseHTTPRequestHandler):
                     deferred_ui_images=defer_ui_tool_images(body)
                     vision_stats=archive_observed_tool_images(body)
                     vision_stats['deferred_ui_images']=deferred_ui_images
+                    original_input_count = len(body.get('input', []))
                     vision_stats.update(register_tools(body))
                     try:
                         retained_failures=retain_execution_state(body)
@@ -565,6 +567,11 @@ class Handler(BaseHTTPRequestHandler):
                 if tool_execution_enabled and route=='/v1/responses':
                     append_runtime_state(body,BATCH_GUIDANCE)
                 media_converted=normalize_media(body)
+                if route == '/v1/responses':
+                    try:
+                        vision_stats.update(reconcile(body, original_input_count, archive_thread_id(body.get('instructions'))))
+                    except (OSError, ValueError, TypeError, KeyError) as error:
+                        print('Request continuity unavailable: ' + type(error).__name__, flush=True)
                 routing = route_inference(body,route,settings,name,media_converted,vision_stats)
                 if selected_backend(settings)=='moe4all':
                     from moe4all_backend import normalize_request

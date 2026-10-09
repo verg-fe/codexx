@@ -1,0 +1,7 @@
+{
+  "before_common_prefix_chars": 1330,
+  "after_common_prefix_chars": 1416,
+  "previous_prompt_chars": 1416,
+  "previous_prompt_is_prefix": true,
+  "test": "actual local llama.cpp /apply-template; no inference and no slot modification"
+}

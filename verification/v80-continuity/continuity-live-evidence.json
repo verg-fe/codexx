@@ -1,0 +1,51 @@
+{
+  "passed": true,
+  "test": "three actual Responses requests through deployed gateway",
+  "rows": [
+    {
+      "round": 1,
+      "usage": {
+        "input_tokens": 3523,
+        "output_tokens": 25,
+        "total_tokens": 3548,
+        "input_tokens_details": {
+          "cached_tokens": 339
+        }
+      },
+      "output_types": [
+        "reasoning",
+        "message"
+      ]
+    },
+    {
+      "round": 2,
+      "usage": {
+        "input_tokens": 3724,
+        "output_tokens": 25,
+        "total_tokens": 3749,
+        "input_tokens_details": {
+          "cached_tokens": 3547
+        }
+      },
+      "output_types": [
+        "reasoning",
+        "message"
+      ]
+    },
+    {
+      "round": 3,
+      "usage": {
+        "input_tokens": 3925,
+        "output_tokens": 25,
+        "total_tokens": 3950,
+        "input_tokens_details": {
+          "cached_tokens": 3748
+        }
+      },
+      "output_types": [
+        "reasoning",
+        "message"
+      ]
+    }
+  ]
+}
