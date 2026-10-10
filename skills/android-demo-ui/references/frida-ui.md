@@ -28,14 +28,6 @@ Java enum/静态数值字段取.value；int数组Java.array('int',[0,0])；颜�
 
 启动器可停止持续存活，真实root触屏点击触发黑花，1000ms定时器后弹窗，实测1170/1165ms；停止后LISTENER_RESTORED与RESTORE_CONFIRMED true，退出0。截图只证明当时画面，不证明长期运行。探测结束要清理；交付时确保持续实例实际启动且不重复。
 
-## 无障碍树与截图点击
+## Screenshot/OCR UI evidence
 
-用户要求操作界面时，优先使用无障碍树而非猜坐标或只在内存里直接调用回调。
-
-- 先核对目标包处于前台、设备序列号与当前任务一致；遇到锁屏、遮挡或系统弹窗时，先确认当前状态，再按用户本次要求处理并重新定位。
-- 使用ADB调用uiautomator dump，取得当前界面的XML；根据当前任务定位相关包和节点。匹配resource-id、content-desc、控件文字、class、clickable/enabled和bounds，出现多个候选时结合父子层级明确唯一目标。
-- 输入框与跨应用节点是否需要处理，按用户本次任务确定。界面树里缺失的自绘控件再用截图定位，不能凭历史画面推断当前按钮位置。
-- 用ADB exec-out screencap -p取得当前PNG，查看画面核对目标、遮挡和点击坐标。树的bounds属于屏幕坐标，选择范围内中心点；每次布局、弹窗或焦点变化后刷新树和截图。
-- 在已经确认的节点上通过可用的无障碍点击接口执行；仅有ADB时可将最新树节点bounds转换为input tap坐标。这是依据树定位的触屏点击，不是Frida performClick替代验收。需要root时，用正确引用的su -c完整命令，记录返回码和stderr。
-- 点击后重新取目标树/截图，并检查用户要求的状态变化或真实回调事件；input tap返回0不证明按钮生效。树、截图、触发日志不一致时记录失败并定位原因。
-- 主线程View.performClick只作为区分“触屏未命中”和“业务回调未执行”的受控诊断。交付验收优先再次从真实界面点击，不能把RPC点击成功说成触屏成功。
+Visible Android control targeting is defined by the single snapshot-bound-ui-control skill. Take a fresh screenshot, run CPU OCR on that exact frame for text or CPU symbol/template matching for glyphs, map through the same snapshot, make one guarded click, then verify with a fresh screenshot. Do not use UIAutomator/accessibility-tree tools or raw ADB taps to locate or activate visible controls. Check package, foreground activity, PID and bounded logcat separately when diagnosing runtime behavior.

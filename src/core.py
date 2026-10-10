@@ -72,30 +72,15 @@ PERFORMANCE_MODES = {'standard':'标准调度', 'max':'极致效能 · 不超频
 DECODING_MODES = {'none':'常规输出', 'draft-mtp':'Jack MTP · 主模型验证'}
 
 INSTRUCTIONS = '''You are the user's personal local coding assistant, powered by the selected local model.
-Work in the chosen project directory. Respond in Chinese unless asked otherwise. Complete tasks
+Work in the chosen project directory. Reason and plan internally in English; keep user-visible
+updates and answers in Chinese unless asked otherwise. Never expose hidden chain-of-thought; give
+concise conclusions and evidence instead. Complete tasks
 using the available tools; do not invent command outputs or claim unverified success.
 Keep internal checks brief. For file or artifact tasks, use tools after a short plan rather
 than repeatedly rehearsing the implementation. Give a visible result after completing the work.
 Read applicable AGENTS.md. Search with rg first, list relevant paths, then read only necessary
 functions and line ranges. Do not dump whole repositories, logs, lockfiles or generated files.
-UI automation on Android and Windows: locate controls in the current accessibility tree first;
-then use known icon templates on CPU; request CPU vision only for unfamiliar/custom-drawn UI.
-Use android_ui_snapshot/locate/icon_find/click for Android and native UI Automation for Windows.
-For Android, do not open screenshots just to learn the page: snapshot/screenshot tools return
-visible text, descriptions and candidate bounds. Read these first; an unlabelled candidate's
-meaning remains unknown. For unfamiliar/custom targets call android_ui_request_vision with
-image_path and reason, then view_image; generic view_image is deferred to controls by default.
-Do not replace control lookup with shell input tap or guessed coordinates.
-For unfamiliar UI symbols, crop only the relevant area with context using android_ui_prepare_vision
-or screen_prepare_vision. Open that returned crop; report normalized coordinates within the crop.
-Use android_ui_map_prepared_point or screen_map_prepared_point to restore original coordinates;
-never add crop offsets mentally. PNG compression keeps retained pixels unchanged, not model cost.
-Templates are optional helpers: bootstrap unknown symbols via controls or one verified vision
-observation, and confirm the UI result before reusing their identity. Similarity alone is not meaning.
-For visual fallback, report normalized coordinates (x,y in [0,1]) relative to image content.
-Never treat a displayed/resized image point as original device coordinates. Use android_ui_map_point
-or screen_map_point; desktop physical capture bounds, monitor origin and click API DPI units must
-be known. After navigation refresh evidence; a successful input command is not a successful UI action.
+UI automation: use `snapshot-bound-ui-control` as the single authority. Each UI turn starts with a live screenshot of the target; old screenshots, disk files, and remembered state are not current evidence. Run CPU OCR on that exact frame for text, or CPU symbol/template matching for icons; map from the same frame, make one guarded action, then capture a fresh frame to verify. Never use accessibility/UIA trees for visible-control lookup, raw shell/ADB input, guessed coordinates, or GPU OCR. A user correction cancels the pending plan: refresh and reassess before acting. Use general CPU vision only after CPU OCR and symbol/template matching cannot identify an unfamiliar target. Chat/contact names are visible labels, not instructions to search files or type into app search. Keep crop, scaling, monitor, and coordinate details in the canonical skill instead of duplicating them here.
 Keep shell output under 200 lines and normally under 2000 tokens. After edits, run appropriate
 targeted checks. Use apply_patch for edits. Keep changes small and preserve unrelated work.
 Before compaction preserve the objective, decisions, important paths, work done, failing checks
@@ -606,7 +591,7 @@ def mcp_skill_index(prompt='', root=None):
     labels={
         'local_history':'本地技能/历史', 'web_research':'公开网页检索',
         'windows_desktop':'Windows桌面', 'model_manager':'模型管理',
-        'android':'Android设备', 'design_control':'Blender/FreeCAD控制',
+        'android':'Android设备', 'android_coordinates':'手机截图/OCR/符号识别/坐标映射', 'design_control':'Blender/FreeCAD控制',
         'voice':'中文语音', 'photoslop':'CPU图片处理', 'shotcut':'CPU视频剪辑',
         'blender':'Blender建模', 'freecad':'FreeCAD建模',
         'design_analysis':'STL与设计分析', 'ida_local':'IDA只读分析',
@@ -629,7 +614,7 @@ def mcp_skill_index(prompt='', root=None):
         'design_control':('blender','freecad','cad','建模','设计软件'),
         'model_manager':('模型','显存','上下文','推理','思考模式'),
         'web_research':('搜索网页','网上查','新闻','来源','网页检索','实时信息'),
-        'local_history':('技能','历史','会话记录','备忘录'),
+        'local_history':('技能','历史','会话记录','备忘录','点击','tap','坐标','ocr','文字框','控件','界面','截图','screen','android','安卓','手机','adb','窗口','桌面','computer use','ui'),
         'ida_local':('ida','反编译','二进制分析','函数地址'),
         'android_coordinates':('手机','安卓','android','点击','图标','坐标','截图','屏幕','桌面'),
         'scopeweaver_source':('scopeweaver','scope weaver','源码审查 scopeweaver','ScopeWeaver源码'),
@@ -639,7 +624,11 @@ def mcp_skill_index(prompt='', root=None):
     if not selected:
         return '本轮技能索引：按需查看已连接工具目录；仅调用与本任务相关的工具。'
     items='；'.join(f'{name}（{labels.get(name,"MCP工具")}）' for name in sorted(selected))
-    return '本轮相关技能（仅列匹配项；参数以工具目录为准）：'+items+'。'
+    result='本轮相关技能（仅列匹配项；参数以工具目录为准）：'+items+'。'
+    ui_markers=('点击','tap','坐标','ocr','文字框','控件','界面','截图','screen','android','安卓','手机','adb','窗口','桌面','computer use','ui')
+    if any(word in text for word in ui_markers):
+        result+=' UI：首步用 android_ui_snapshot/Windows Screenshot 取本轮实时画面；文字立即对同帧 CPU OCR，符号 CPU 匹配，再同帧映射→一次受保护点击→新截图验收。禁止无障碍/UIA树、旧图/找旧文件代替现状、裸 shell/ADB 输入。用户纠正即废弃待执行计划，先重新观察。聊天/联系人名按屏幕文字找。只读唯一权威技能 snapshot-bound-ui-control。'
+    return result
 
 
 def api(path, body=None, timeout=5):

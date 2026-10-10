@@ -15,7 +15,7 @@ description: 用于用户要求实现软件功能、修改界面、自动化操�
 - 不熟悉或版本相关的 API，优先用可用搜索工具查官方资料；带库名、版本、方法或完整错误片段。首页/摘要不是接口有效的证据；读相关正文或实际安装包的公开接口。网络失败时明确记录，不能冒充查证成功。
 - 若软件问题依赖实际 Windows 应用界面、弹窗、控件、焦点、启动状态或可见运行结果，即使用户只描述了一个功能或故障，也主动加载并使用 `windows-desktop-control` 通过 Windows MCP 查看现场并验证结果。纯代码/API问题不因运行环境是 Windows 就调用桌面工具。
 - 用户运行中的正常推理或工具不要误判卡死。验证等待要有真正可生效的期限；进程退出、输出日志、端口和目标行为分别核对。
-- Windows、子进程和后台任务出错时读 [references/windows-runtime.md](references/windows-runtime.md)。Android App 开发或界面任务按需调用 $android-demo-ui。
+- Windows、子进程和后台任务出错时读 [references/windows-runtime.md](references/windows-runtime.md)。Android App 开发或界面任务按需调用 $snapshot-bound-ui-control；Frida细节见其 `references/android-app-debugging.md`。
 
 ## 交付与完成
 
@@ -23,9 +23,10 @@ description: 用于用户要求实现软件功能、修改界面、自动化操�
 - 持续功能需要可启动、可停止、避免重复实例，停止时恢复改动。短时探测与持续交付分开。
 - 改正在使用的软件前保留可恢复备份，更新用户实际使用的入口。根据用户需求完成本地实现、外部集成和交付。
 - 报告完成内容、关键证据、入口和实际剩余限制。没有验收证据时继续排查或说明缺少什么，不能把“代码写完”说成“功能正常”。
-## UI 操作必须走实时快照路由
+## UI-tool routing must run before UI actions
 
-- 用户提到手机、Android、ADB、截图、坐标、点击、菜单或屏幕控件时，先加载 `snapshot-bound-ui-control` 和匹配的平台 UI skill，再调用当前真实可用的快照与点击工具。不能用“我正在截图/点击”的文字代替工具调用。
-- 记忆坐标、前几轮坐标和用户粘贴的旧截图只能作为搜索线索。每次点击前都要取得新快照、在当前画面重新识别目标，并用相同快照 ID 的坐标映射工具；禁止猜测坐标或直接 `adb input tap` 绕过受保护点击工具。
-- 点击后若没有返回新截图，就重新取快照再判断。无障碍树为空或 `ui_tree_changed: false` 不能说明点击成功或失败；必须看新的画面。一次不确定操作后先诊断，最多基于新画面重试一次。
-- 如果当前运行环境没有所需 UI 工具，说明缺少哪个工具并停在诊断，不得声称已经截图、点击或验证。
+- If the task mentions a phone, Android, ADB, screenshot, coordinate, tap, click, menu, or on-screen control, load the single `snapshot-bound-ui-control` skill before taking any UI action; use its Android or Windows reference as needed. A screenshot attached in chat does not count as a live observation.
+- Discover the currently available tool names and schemas, then use the snapshot-bound UI workflow described by that skill. Do not replace it with guessed raw `adb input tap` or remembered coordinates.
+- Treat remembered coordinates, coordinates in prior turns, and points from user-pasted screenshots as hints only: every click requires a new live snapshot, current-frame target identification, and same-snapshot coordinate mapping. If the tree reports no change, inspect a fresh screenshot; do not infer that the tap missed or repeat guessed taps from `ui_tree_changed: false`.
+- If a snapshot is expired, perform a real fresh snapshot call; do not narrate a refresh and keep using old coordinates. After one action, inspect the returned fresh evidence before deciding the next step.
+- If a required tool is unavailable, say that plainly and stop at diagnosis; never pretend it was called.

@@ -1,22 +1,37 @@
 ---
 name: snapshot-bound-ui-control
-description: Use when operating Android or Windows application screens by accessibility tree, screenshot, UIA, or coordinates; especially when a snapshot is stale, resized, cropped, or the app draws its own controls.
+description: Operate Android and Windows screens through fresh screenshots, CPU OCR, symbol/template matching, mapped clicks, and app-state verification. Use for all visible UI control and Android app debugging.
 ---
 
-# Snapshot-bound UI control
+# Screenshot and OCR UI control
 
-Tie every screen action to a fresh observation and its exact coordinate space. Read only the platform reference needed for the current task:
+This is the single source of truth for visible UI targeting on Android and Windows. Do not look up an accessibility/UIA tree to find a visible control. A tree-first rule in another prompt or skill is stale; follow this workflow.
 
-- Android phone or tablet: [references/android.md](references/android.md)
-- Windows desktop: [references/windows.md](references/windows.md)
+## One workflow for phone and desktop
 
-Core rules:
+1. Discover the live screenshot, OCR, mapping, click, and app-state tools and their schemas. Fix the Android device serial when applicable.
+2. Capture a fresh screenshot. Android `android_ui_snapshot` is screenshot-only; it must not dump UIAutomator XML or wait for a tree. Desktop uses a fresh screenshot and display metadata.
+3. For a text target, call CPU OCR on that exact screenshot immediately. Do not wait for, query, or retry an accessibility/UIA tree. Inspect actual OCR output: recognized text, confidence, bounding box, image dimensions, and coordinate-space label. A narration that OCR ran is not evidence.
+4. Match the exact requested text plus nearby context. If there is exactly one usable match, map its box center from that same screenshot/crop with the platform mapper. If it is duplicated, low-confidence, missing a box, or the OCR tool errors, do not click; refresh or report the evidence gap. Never infer OCR failure without an actual tool result.
+5. For a symbol target, use CPU geometric-symbol matching or an observed CPU template on the same screenshot. Require one unique match. General vision is the last fallback for unfamiliar/custom-drawn content after OCR and CPU symbol/template methods cannot identify it.
+6. Map the selected point through the platform tool using the same screenshot ID and image dimensions/crop. Never copy pixels from a displayed/resized image into device or desktop coordinates.
+7. On an Android device where the user has authorized root input, issue every click through the guarded click tool with `use_root=true`; do not try ordinary shell input first. Then capture a new screenshot and verify the requested state. An input success or unchanged tree alone is not success. If the snapshot is stale, capture and identify/map the target again first. Never use a raw `su` tap or guessed coordinates. If guarded root input fails, stop with the exact error.
 
-1. Discover the live observation and click tools and schemas. A sentence saying “I took a screenshot” or “I clicked” is not a tool call; invoke the actual tool and base the next step on its result.
-2. Capture the current screen. An expired snapshot invalidates its coordinates, node IDs, and conclusions; take a real new snapshot before acting.
-3. Prefer a unique live accessibility/UIA node. Treat empty or degenerate trees as unavailable and use the screenshot path for custom-drawn controls.
-4. **Never click a remembered or guessed coordinate.** Coordinates from memory, an earlier turn, a pasted/old screenshot, or prior successful attempts are search hints only. Find the target again in the current live screenshot and map that point through the platform tool using the current snapshot ID. If the current frame or mapping tool is unavailable, do not click.
-5. Keep original-image, displayed-image, crop, physical-screen, and logical-screen coordinates distinct. Use the platform's mapping tool with the same snapshot ID; do not manually reinterpret resized or cropped points as device coordinates.
-6. Perform one action per observation, then inspect fresh visual evidence. A successful input call, unchanged accessibility tree, or `ui_tree_changed: false` alone does not establish whether the intended control was activated.
-7. If the action result has no fresh screenshot, explicitly capture a new snapshot before evaluating success or choosing another target. After one failed/uncertain action, refresh and diagnose; allow at most one retry from a newly observed and independently mapped target, otherwise stop instead of guessing or looping.
-8. For sends, shares, purchases, installs, permission grants, or other consequential controls, verify the exact target and remain within the user's requested scope.
+## CPU and coordinate rules
+
+- OCR and CPU symbol/template matching must use CPU only and must not allocate VRAM. For Android use the configured RapidOCR CPU provider; for desktop use the configured `screen_ocr` CPU provider.
+- Keep original image pixels, displayed image pixels, crop-relative pixels, Android device pixels, desktop physical pixels, logical pixels, and multi-monitor offsets distinct.
+- Require the mapper to return the final device/desktop point. No manual scale guesses, remembered coordinates, old screenshots, raw `adb input tap`, or guessed clicks when the guarded mapper/click tool is available.
+- For crop-based recognition, preserve the exact crop offset and source screenshot hash; use the prepared-point mapper rather than adding offsets by hand.
+- For sends, shares, installs, permissions, purchases, or other consequential actions, verify the exact target and remain within the user's request.
+
+## Android app work
+
+Use this same screenshot/OCR workflow for app testing, dialogs, and self-drawn surfaces. Separately inspect package, foreground activity, PID, and time-bounded logcat when needed; those app-state checks do not replace visual target identification. Distinguish “input issued,” “screen changed,” and “business action completed.” If a click misses, refresh the screenshot and diagnose focus, overlay, scaling, or target identity. Preserve original listeners before test hooks and restore them on stop; do not use Frida to bypass platform permissions or security checks. For device-specific Frida bridge, hook, and callback diagnostics, read [Android app debugging](references/android-app-debugging.md).
+
+## Platform references
+
+- Android: [references/android.md](references/android.md)
+- Windows: [references/windows.md](references/windows.md)
+
+These references only add platform coordinate and device constraints. They must not introduce a tree-first or UIA-first control path.

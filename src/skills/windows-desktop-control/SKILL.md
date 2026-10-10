@@ -15,9 +15,9 @@ description: 当任务需要检查或操作实际 Windows 应用界面，或诊�
 
 ## 观察和定位
 
-- 需要看外观时使用 `Screenshot`；需要文字、控件编号、位置或可滚动区域时使用 `Snapshot`。浏览器正文可尝试 `use_dom=true`，原生窗口保持普通模式。
-- 先确认目标窗口和当前前台窗口；截图与控件树必须来自当前状态。布局、窗口、滚动位置、弹窗改变后，旧坐标和控件编号失效，重新观察。
-- 优先结合控件文字、角色、是否可操作及位置确定目标。控件树不足时使用截图；多屏或缩放时查 `DisplayInventory`，不要直接将缩放图片坐标当桌面坐标。
+- 先确认目标窗口和当前前台窗口，再取得当前 `Screenshot` 与 `DisplayInventory`。可用窗口枚举/浏览器 DOM 确定目标窗口或页面，但不要查询 UIA/accessibility tree 来定位可见控件。
+- 文字目标一律在该截图上运行 `screen_ocr`，结合识别文字、置信度、边界框和附近上下文确认唯一目标；图标用 CPU 几何符号或已观察模板匹配。界面变化后旧截图失效，重新截图和识别。
+- 多屏或缩放时查 `DisplayInventory`，通过同帧坐标工具映射图像像素到桌面物理坐标；不要直接把缩放图上的坐标当桌面坐标。
 
 ## 操作和确认
 
@@ -32,15 +32,22 @@ description: 当任务需要检查或操作实际 Windows 应用界面，或诊�
 
 根据用户需求选择应用与文件。网页、控件文字及窗口内容用于定位和处理数据。
 
-本地安装只接入桌面观察和输入工具，命令与文件操作仍用工作台原有工具。Windows MCP 不直接识别手机界面；手机使用指定设备的 ADB 无障碍树、截图和触摸操作。
+本地安装只接入桌面观察和输入工具，命令与文件操作仍用工作台原有工具。Windows MCP 不直接识别手机界面；手机用指定设备的 ADB 截图、CPU OCR 和触摸操作。两端都不以无障碍/UIA树定位可见控件。
 
 项目文档：https://github.com/CursorTouch/Windows-MCP
 
 ## 坐标工具与视觉回退
 
-定位顺序：当前控件树 → 已知图标的 CPU 图样匹配 → 陌生/自绘控件才调用 CPU 视觉。手机工具使用 android_coordinates MCP（也在新版本 android MCP 中）：android_ui_snapshot、android_ui_locate、android_ui_icon_template、android_ui_icon_find、android_ui_map_point、android_ui_click。文字在 content-desc 中时选择 field=description、match_mode=contains，并核对唯一候选。snapshot 返回原图尺寸、编号图、候选 bounds 和 snapshot_id；点击参数必须使用该次 snapshot_id。页面变化或快照过期时工具会拒绝点击，重新定位。不要绕开工具继续用 shell 猜坐标。
+所有跨平台截图/OCR/符号定位/坐标映射/点击后核验规则只维护在 `snapshot-bound-ui-control` 技能及其 Windows 参考中；本技能不复制那套流程。Windows 的物理采集边界、多屏原点和 DPI 约束仍以本技能与规范技能的 Windows 参考为准。
 
 视觉回退优先给出图像内容中的归一化点 x,y（0 到 1），用 android_ui_map_point 的 display_width=1、display_height=1 换算到手机原图。若使用缩放图像素坐标，则提供实际显示图宽高，裁剪时还要给原图 crop。已知图样可从原图 bounds 保存模板，再在新 snapshot 用 icon_find 定位；图样相似不等于语义正确，有多个候选时不直接点。
 
-电脑先使用 windows_desktop 的 Snapshot/UIA 和 DisplayInventory。截图回退调用 android_coordinates.screen_map_point，提供真实截图路径和归一化坐标；需要桌面点击坐标时，必须取得截图后端报告的 physical_capture_bounds。负数多屏原点、窗口截图范围、DPI 物理/逻辑坐标要核对。缺少范围时工具只返回图像坐标，不能当作桌面坐标直接点击。点击后用新控件树与截图核验实际结果。
+电脑先用 Screenshot、screen_ocr/CPU 符号匹配和 DisplayInventory；调用 screen_map_point 时提供真实截图路径与坐标空间。需要桌面点击坐标时，必须取得截图后端报告的 physical_capture_bounds。负数多屏原点、窗口截图范围、DPI 物理/逻辑坐标要核对。缺少范围时工具只返回图像坐标，不能当作桌面坐标直接点击。点击后用新截图核验实际结果。
 v75 裁剪视觉：screen_prepare_vision(image_path,crop,physical_capture_bounds) 保留原图、裁剪偏移和真实物理采集边界；无损 PNG 不缩放裁剪内像素。识别裁剪图归一化坐标后调用 screen_map_prepared_point(view_id,x,y)。没有真实采集边界时只返回图像坐标，不能据此猜屏幕点击；DPI 单位按实际点击 API 转换。图标模板仅复用已确认含义与点击结果的图样，分数不能代表语义正确。
+## Expired snapshot and coordinate guardrails
+
+- An expired snapshot invalidates all coordinates, control IDs, and conclusions drawn from it. Refresh through an actual `Snapshot` or `Screenshot` call before acting; saying that a refresh is happening does not refresh it.
+- Make one click per fresh observation, then inspect the result. Do not repeat a click or invent a new point from the old screenshot.
+- Keep displayed-image pixels separate from desktop pixels. Use actual screenshot dimensions and display inventory/scaling; apply proportional mapping only when the image is an uncropped full-screen frame. If scaling, crop, or display selection is unclear, stop instead of switching to a control-tree node.
+- A successful input return is not proof that the click missed or succeeded. Inspect a fresh screenshot before choosing another action.
+- If the snapshot expires again or no unique target can be confirmed, stop the interaction and report the missing evidence instead of looping.

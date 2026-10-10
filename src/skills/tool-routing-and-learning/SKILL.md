@@ -9,8 +9,8 @@ description: 出现工具选用困难、重复错误、界面结果不明确或�
 |---|---|---|
 | 项目实现、构建错误、文件变化 | 原生文件工具、rg、构建器 | 先定位报错对应文件和行，不用截图代替编译输出 |
 | 陌生 API 或版本差异 | search_web、read_webpage、实际安装源码 | 查询保留库名、版本、API 名和精确异常；阅读官方正文，不把搜索摘要当接口保证 |
-| Windows 窗口、弹窗、焦点、操作效果 | windows_desktop Snapshot/Screenshot | 从当前截图或控件树定位；界面变化后刷新；只需要局部证据时缩小截图范围 |
-| 手机界面、应用启动和崩溃 | 指定设备 ADB、无障碍树、截图、定向 logcat | 手机不使用 Windows MCP；核对包名、PID、日志时间和当前安装版本 |
+| Windows 窗口、弹窗、焦点、操作效果 | windows_desktop Screenshot、screen_ocr、DisplayInventory | 可用窗口枚举确定窗口；可见控件从同帧截图 OCR/CPU符号定位，变化后刷新 |
+| 手机界面、应用启动和崩溃 | 指定设备 ADB 截图、CPU OCR、定向 logcat | 手机不使用 Windows MCP；可见控件不查无障碍树；核对包名、PID、日志时间和当前安装版本 |
 | Android 运行时行为 | 已验证的 Python 3.12 Frida 客户端 | 先验证 USB 通道、目标进程和实际版本，区分客户端连接问题与脚本/API 错误 |
 | 原生二进制函数和交叉引用 | ida_local MCP | 先确认当前 IDB，再查函数、字符串、反编译；没有本机二进制问题时无需启动 IDA |
 | 构建隔离或工具版本冲突 | 现有虚拟机环境和其项目技能 | 先复用已安装组件；不要因新目录为空就认定环境缺失 |

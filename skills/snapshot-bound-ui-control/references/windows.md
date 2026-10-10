@@ -1,8 +1,8 @@
-# Windows desktop coordinate workflow
+# Windows screenshot and OCR workflow
 
-- Start with the actual `windows_desktop` tool list and schemas. Use `Snapshot`/UIA for a unique named control; use `Screenshot` for custom-drawn content or when the control tree is insufficient.
-- Expired snapshot IDs and control IDs are invalid. Make a real fresh tool call before any subsequent action; do not keep using the old frame after saying “refresh”.
-- For screenshot clicks, obtain the screenshot's real capture bounds and `DisplayInventory`. Keep image pixels, crop offsets, physical desktop coordinates, virtual-screen origins, DPI scaling, and logical click coordinates separate. Map through an available coordinate tool with the matching frame; if required metadata is missing, stop rather than guess.
-- Make one click/keypress per observation, then capture the new screen and verify the target state. `ui_tree_changed: false` or a successful input return is not sufficient by itself.
-- On an uncertain result, reobserve and diagnose focus, occlusion, window, display, and scaling. Retry at most once from a fresh confirmed target; stop if still ambiguous.
-- If the user takes control of the mouse/keyboard, stop input and wait until control is available before taking a new observation.
+- Capture a fresh screenshot and record its actual capture bounds plus `DisplayInventory` geometry. Do not query UIA/accessibility trees to locate visible controls.
+- For a text target, run `screen_ocr` on the exact screenshot and inspect its recognized text, confidence, bounding box, image dimensions, and coordinate-space label. If the OCR call errors, report a tool failure rather than saying it found no text.
+- Match the requested label using nearby context and require one usable box. Map the center from that same screenshot/crop through the desktop coordinate tool. Keep image pixels, physical desktop coordinates, logical coordinates, DPI scaling, crop offsets, and multi-monitor origins distinct.
+- For symbols, use CPU geometric-symbol or observed CPU-template matching on the same screenshot. General vision is only a fallback after OCR and CPU matching cannot identify the target.
+- Make one guarded click or keypress, then capture a new screenshot and verify the requested state. A successful input return is not task success.
+- If the user takes control of mouse/keyboard, stop input and reobserve only after control is available. On ambiguity, stale image, or missing map metadata, do not guess; refresh and diagnose. Retry at most once from a newly observed target.

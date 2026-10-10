@@ -1,0 +1,12 @@
+{
+  "base_runtime": "2026-10-10-runtime-81",
+  "scope": "source-only live screenshot and English internal planning hotfix",
+  "checks": {
+    "source_syntax": "passed",
+    "focused_unit_tests": "23 passed in prior G-drive build verification",
+    "skill_validation": "passed in prior G-drive build verification",
+    "android_mcp_stdio_handshake": "passed; 16 tools; no device touched",
+    "live_ui_end_to_end": "not run"
+  },
+  "artifact": "none; source-only GitHub commit"
+}
