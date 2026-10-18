@@ -1,7 +1,68 @@
 """Validate native calls and plan bounded retries; never execute partial arguments."""
 import json
+import re
 
 RECOVERABLE_CODES = frozenset({'tool_arguments_incomplete', 'tool_arguments_missing', 'tool_unknown'})
+
+def context_overflow_detail(error):
+    """Extract a short, structured context-window failure from nested RPC errors."""
+    parts=[]
+    stack=[error]
+    seen=set()
+    while stack:
+        value=stack.pop()
+        if isinstance(value,dict):
+            if value.get('code')=='exceed_context_size_error':
+                parts.append('exceed_context_size_error')
+            for key in ('message','error','details'):
+                if key in value:stack.append(value[key])
+            continue
+        if not isinstance(value,str):continue
+        text=value.strip()
+        if text in seen:continue
+        seen.add(text);parts.append(text)
+        if text.startswith('{') and len(text)<12000:
+            try:stack.append(json.loads(text))
+            except (ValueError,TypeError):pass
+    text=' '.join(parts).lower()
+    if not any(marker in text for marker in (
+            'exceed_context_size_error','exceeds the available context size',
+            'context length exceeded','maximum context length')):
+        return None
+    joined=' '.join(parts)
+    requested=re.search(r'["\']?n_prompt_tokens["\']?\s*[:=]\s*["\']?(\d+)',joined,re.I)
+    limit=re.search(r'["\']?n_ctx["\']?\s*[:=]\s*["\']?(\d+)',joined,re.I)
+    if not requested:
+        requested=re.search(r'request\s*\((\d+)\s*tokens?\)',joined,re.I)
+    if not limit:
+        limit=re.search(r'available context size\s*\((\d+)\s*tokens?\)',joined,re.I)
+    return {'requested':int(requested.group(1)) if requested else None,
+            'limit':int(limit.group(1)) if limit else None}
+
+def context_overflow_summary(detail):
+    if detail.get('requested') and detail.get('limit'):
+        return f"上下文超限（{detail['requested']:,}/{detail['limit']:,} token）"
+    return '上下文超出模型窗口'
+
+def classify_unexecuted_tool_error(error):
+    """Recognize only explicit malformed-call errors that guarantee no execution."""
+    if isinstance(error, dict):
+        code = error.get('code')
+        message = error.get('message', '')
+        if code in RECOVERABLE_CODES:
+            return code, str(message or code)
+        error = message
+    text = str(error or '')
+    lower = text.lower()
+    not_executed = ('此调用未执行' in text or 'tool call was not executed' in lower or
+                    'call was not executed' in lower)
+    malformed_arguments = (
+        '工具参数 json 未闭合或损坏' in lower or
+        ('tool argument' in lower and any(word in lower for word in ('incomplete', 'malformed', 'invalid json')))
+    )
+    if not_executed and malformed_arguments:
+        return 'tool_arguments_incomplete', text[:800]
+    return None
 
 class ToolCallFormatError(ValueError):
     def __init__(self, code, message):
@@ -68,8 +129,9 @@ class RecoveryBudget:
         return self.ticket, self.counts[thread]
 
 
-def recovery_prompt(state):
+def recovery_prompt(state, attempt=1):
+    max_chars = 2000 if attempt <= 1 else 1000
     return ('客户端诊断：上一条工具调用未执行。' + state.get('reason', '') + '\n'
             '继续当前任务，先检查已有文件，保留已经成功的修改。只做最小必要推理，'
-            '每次写一个文件或一个小补丁，工具输入最多4000字符；大文件分段写入。'
+            f'每次写一个文件或一个小补丁，工具输入最多{max_chars}字符；大文件分段写入。'
             '完整结束 JSON 和补丁后再调用工具。不要原样重发上一条残缺调用。')

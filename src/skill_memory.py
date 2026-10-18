@@ -10,10 +10,14 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
 DEFAULT_ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
+MAX_FRONTMATTER_BYTES = 8192
+_INDEX_LOCK = threading.RLock()
+_INDEX_CACHE = {}
 
 
 def read_local_text(path):
@@ -54,11 +58,11 @@ def parse_skill(text):
 
 
 class SkillMemory:
-    def __init__(self, root=DEFAULT_ROOT):
+    def __init__(self, root=DEFAULT_ROOT, bundle_root=None):
         self.root = Path(root)
         self.skills = self.root / 'codex-home' / 'skills'
         self.skills.mkdir(parents=True, exist_ok=True)
-        bundled = Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'skills'
+        bundled = Path(bundle_root) if bundle_root is not None else Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'skills'
         self.bundled_skills = bundled.resolve()
 
     def path(self, name):
@@ -105,8 +109,16 @@ class SkillMemory:
 
     def _read(self, name):
         user_path = self.path(name)
-        path = user_path if user_path.is_file() else self.bundled_skills / name / 'SKILL.md'
-        if not path.resolve().is_relative_to(self.bundled_skills) and not path.resolve().is_relative_to(self.skills.resolve()):
+        on_demand_path = self.skills / 'on-demand' / name / 'SKILL.md'
+        if user_path.is_file():
+            path = user_path
+        elif on_demand_path.is_file():
+            path = on_demand_path
+        else:
+            path = self.bundled_skills / name / 'SKILL.md'
+        resolved = path.resolve()
+        if not (resolved.is_relative_to(self.bundled_skills) or resolved.is_relative_to(self.skills.resolve())
+                or path.is_relative_to(self.skills)):
             raise ValueError('技能路径必须位于用户技能库或程序内置技能库。')
         if not path.is_file():
             raise FileNotFoundError('找不到该技能。')
@@ -118,6 +130,186 @@ class SkillMemory:
                 'path': str(path), 'revision': hashlib.sha256(path.read_bytes()).hexdigest(),
                 'encoding': encoding, 'resources': metadata.get('resources', []),
                 'evidence': metadata.get('evidence', ''), 'updated_at': metadata.get('updated_at')}
+
+    @staticmethod
+    def _read_frontmatter(path):
+        """Read only the bounded YAML header; never read a Skill body for indexing."""
+        lines = []
+        total = 0
+        encoding = None
+        with Path(path).open('rb') as stream:
+            first = stream.readline(MAX_FRONTMATTER_BYTES + 1)
+            if not first or len(first) > MAX_FRONTMATTER_BYTES:
+                raise ValueError('技能 frontmatter 缺失或超过索引上限。')
+            total += len(first)
+            if first.startswith(b'\xef\xbb\xbf'):
+                encoding = 'utf-8'
+                first = first[3:]
+            elif first.startswith(b'\xff\xfe'):
+                encoding = 'utf-16-le'
+                first = first[2:]
+            elif first.startswith(b'\xfe\xff'):
+                encoding = 'utf-16-be'
+                first = first[2:]
+            elif b'\x00' in first:
+                encoding = 'utf-16-le' if first[1::2].count(0) > first[0::2].count(0) else 'utf-16-be'
+            else:
+                encoding = 'utf-8'
+
+            def decode_line(raw):
+                try:
+                    return raw.decode(encoding).rstrip('\r\n\x00')
+                except UnicodeDecodeError:
+                    return raw.decode('gb18030').rstrip('\r\n\x00')
+
+            opening = decode_line(first)
+            if opening != '---':
+                raise ValueError('技能缺少 YAML frontmatter。')
+            lines.append(opening)
+            while total < MAX_FRONTMATTER_BYTES:
+                raw = stream.readline(MAX_FRONTMATTER_BYTES - total + 1)
+                if not raw:
+                    break
+                total += len(raw)
+                if total > MAX_FRONTMATTER_BYTES:
+                    raise ValueError('技能 frontmatter 超过索引上限。')
+                line = decode_line(raw)
+                lines.append(line)
+                if line == '---':
+                    break
+            if len(lines) < 2 or lines[-1] != '---':
+                raise ValueError('技能 frontmatter 不完整或超过索引上限。')
+        description, _ = parse_skill('\n'.join(lines) + '\n')
+        return description
+
+    def resident_index(self):
+        """Return only local-toolchain metadata for the small always-on index."""
+        base_key = (str(self.skills.resolve()), str(self.bundled_skills.resolve()))
+        key = base_key + ('resident-local-toolchain',)
+        candidates = {}
+        for skill_root in (self.bundled_skills, self.skills):
+            try:
+                directories = list(skill_root.iterdir())
+            except OSError:
+                continue
+            for directory in directories:
+                name = directory.name
+                if (not directory.is_dir() or 'local-toolchain' not in name or
+                        not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', name) or len(name) > 63):
+                    continue
+                try:
+                    path = self.path(name) if skill_root == self.skills else directory / 'SKILL.md'
+                    if not path.is_file():
+                        continue
+                    resolved = path.resolve()
+                    if not (resolved.is_relative_to(self.skills.resolve()) or
+                            resolved.is_relative_to(self.bundled_skills)):
+                        continue
+                    stat = resolved.stat()
+                    candidates[name] = (resolved, stat.st_size, stat.st_mtime_ns)
+                except (OSError, ValueError):
+                    continue
+        on_demand_root = self.skills / 'on-demand'
+        try:
+            on_demand_dirs = list(on_demand_root.iterdir()) if on_demand_root.is_dir() else []
+        except OSError:
+            on_demand_dirs = []
+        for directory in on_demand_dirs:
+            name = directory.name
+            if (not directory.is_dir() or 'local-toolchain' not in name or
+                    not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', name) or len(name) > 63):
+                continue
+            path = directory / 'SKILL.md'
+            try:
+                if not path.is_file() or not path.is_relative_to(on_demand_root):
+                    continue
+                stat = path.stat()
+                existing = candidates.get(name)
+                if existing is None or existing[0].is_relative_to(self.bundled_skills):
+                    candidates[name] = (path, stat.st_size, stat.st_mtime_ns)
+            except (OSError, ValueError):
+                continue
+        signature = tuple((name, str(path), size, modified)
+                          for name, (path, size, modified) in sorted(candidates.items()))
+        with _INDEX_LOCK:
+            cached = _INDEX_CACHE.get(key)
+            if cached and cached[0] == signature:
+                return [dict(row) for row in cached[1]]
+            rows = []
+            for name, (path, size, modified) in sorted(candidates.items()):
+                try:
+                    description = self._read_frontmatter(path)
+                    rows.append({'name': name, 'description': description, 'path': str(path),
+                                 'size_bytes': size, 'mtime_ns': modified,
+                                 'metadata_revision': f'{size:x}-{modified:x}'})
+                except (OSError, UnicodeError, ValueError):
+                    continue
+            _INDEX_CACHE[key] = (signature, rows)
+            return [dict(row) for row in rows]
+
+    def index(self):
+        """Return cached Skill metadata, reading only each SKILL.md frontmatter."""
+        key = (str(self.skills.resolve()), str(self.bundled_skills.resolve()))
+        candidates = {}
+        for skill_root in (self.bundled_skills, self.skills):
+            try:
+                directories = list(skill_root.iterdir())
+            except OSError:
+                continue
+            for directory in directories:
+                if not directory.is_dir() or directory.name.startswith('.'):
+                    continue
+                try:
+                    if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*',directory.name) or len(directory.name)>63:
+                        continue
+                    path = self.path(directory.name) if skill_root == self.skills else directory / 'SKILL.md'
+                    if not path.is_file():
+                        continue
+                    resolved = path.resolve()
+                    if not (resolved.is_relative_to(self.skills.resolve()) or
+                            resolved.is_relative_to(self.bundled_skills)):
+                        continue
+                    stat = resolved.stat()
+                    candidates[directory.name] = (resolved, stat.st_size, stat.st_mtime_ns)
+                except (OSError, ValueError):
+                    continue
+        on_demand_root = self.skills / 'on-demand'
+        try:
+            on_demand_dirs = list(on_demand_root.iterdir()) if on_demand_root.is_dir() else []
+        except OSError:
+            on_demand_dirs = []
+        for directory in on_demand_dirs:
+            if not directory.is_dir() or directory.name.startswith('.'):
+                continue
+            try:
+                if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', directory.name) or len(directory.name) > 63:
+                    continue
+                path = directory / 'SKILL.md'
+                if not path.is_file() or not path.is_relative_to(on_demand_root):
+                    continue
+                stat = path.stat()
+                existing = candidates.get(directory.name)
+                if existing is None or existing[0].is_relative_to(self.bundled_skills):
+                    candidates[directory.name] = (path, stat.st_size, stat.st_mtime_ns)
+            except (OSError, ValueError):
+                continue
+        signature = tuple((name, str(path), size, modified)
+                          for name, (path, size, modified) in sorted(candidates.items()))
+        with _INDEX_LOCK:
+            cached = _INDEX_CACHE.get(key)
+            if cached and cached[0] == signature:
+                return [dict(row) for row in cached[1]]
+            rows = []
+            for name, (path, size, modified) in sorted(candidates.items()):
+                try:
+                    description = self._read_frontmatter(path)
+                    rows.append({'name': name, 'description': description, 'path': str(path),
+                                 'size_bytes': size, 'mtime_ns': modified,
+                                 'metadata_revision': f'{size:x}-{modified:x}'})
+                except (OSError, UnicodeError, ValueError):
+                    continue
+            _INDEX_CACHE[key] = (signature, rows)
+            return [dict(row) for row in rows]
 
     @staticmethod
     def resource_state(resource):
@@ -150,26 +342,13 @@ class SkillMemory:
         for word in re.findall(r'[\u3400-\u9fff]+', query):
             tokens.update(word[i:i + 2] for i in range(max(1, len(word) - 1)))
         rows = []
-        with self.locked():
-            names=set()
-            for skill_root in (self.skills,self.bundled_skills):
-                try:
-                    names.update(directory.name for directory in skill_root.iterdir()
-                                 if directory.is_dir() and not directory.name.startswith('.')
-                                 and (directory/'SKILL.md').is_file())
-                except OSError:
-                    continue
-            for name in sorted(names):
-                try:
-                    row = self._read(name)
-                    label = (row['name'] + ' ' + row['description']).casefold()
-                    body = row['body'].casefold()
-                    score = sum(4 if term in label else 1 for term in tokens if term in label or term in body)
-                    if not query or score:
-                        rows.append({'name': row['name'], 'description': row['description'],
-                                     'path': row['path'], 'revision': row['revision'], 'score': score})
-                except (OSError, UnicodeError, ValueError):
-                    continue
+        for row in self.index():
+            label = (row['name'] + ' ' + row['description']).casefold()
+            score = sum(4 if term in label else 0 for term in tokens if term in label)
+            if not query or score:
+                rows.append({'name': row['name'], 'description': row['description'],
+                             'path': row['path'], 'metadata_revision': row['metadata_revision'],
+                             'score': score})
         rows.sort(key=lambda row: (-row['score'], row['name']))
         return {'skills': rows[:limit], 'matched': len(rows), 'directory': str(self.skills)}
 
@@ -209,6 +388,11 @@ class SkillMemory:
             atomic_text(path.parent / 'local-resources.json', json.dumps(state, ensure_ascii=False, indent=2))
             atomic_text(path, text)
             revision = hashlib.sha256(path.read_bytes()).hexdigest()
+            key = (str(self.skills.resolve()), str(self.bundled_skills.resolve()))
+            with _INDEX_LOCK:
+                for cached_key in tuple(_INDEX_CACHE):
+                    if cached_key[:2] == key:
+                        _INDEX_CACHE.pop(cached_key, None)
         return {'saved': True, 'name': name, 'path': str(path), 'revision': revision,
                 'backup': str(backup) if backup else None, 'encoding': 'utf-8'}
 
@@ -305,9 +489,9 @@ def schema(name, description, properties, required):
 
 
 TOOLS = [
-    schema('skill_search', 'Search persistent skills from earlier conversations before downloading dependencies or repeating solved setup. Empty query lists skills. Saved updates are visible immediately.',
+    schema('skill_search', 'Search the compact Skill metadata index (name, trigger description, path only); this never reads Skill bodies or attachments. Use for relevant specialized work or to check whether an existing Skill still applies. Empty query lists metadata only.',
            {'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 10}}, []),
-    schema('skill_read', 'Read a skill in correct Chinese UTF-8, its latest revision, and whether recorded local tools still exist. Use revision when updating the skill.',
+    schema('skill_read', 'Load only the named Skill body on demand, in UTF-8, with its current revision and resource availability. Reuse returned content from the current task; do not repeat the same Skill and offset. Check next_offset and read another chunk only when the remaining instructions are necessary; open referenced resources/scripts only when the task needs them. Use the exact revision when updating.',
            {'name': {'type': 'string'}, 'offset': {'type': 'integer', 'minimum': 0}, 'max_chars': {'type': 'integer', 'minimum': 1, 'maximum': 16000}}, ['name']),
     schema('skill_save', 'Create or update your reusable skill at any time after learning useful facts. Write a concise method and verified local resource paths. Existing skills require their latest expected_revision. Updates are backed up. Do not store raw conversation logs or credentials.',
            {'name': {'type': 'string'}, 'description': {'type': 'string', 'maxLength': 800}, 'body': {'type': 'string', 'maxLength': 24000},
@@ -332,7 +516,7 @@ def call_tool(root, name, arguments):
     return handlers[name](**arguments)
 
 
-INSTRUCTIONS = '''\n技能按需使用：只搜索并读取与当前任务直接相关的技能，不注入完整目录。复用前核对技能路径和版本；执行安装或配置时保留回退并验证实际结果。写入技能时保存简明步骤、路径、版本和证据，合并到现有技能并标出未验证内容。\n'''
+INSTRUCTIONS = '''\nSkills: Keep only local-toolchain Skill metadata in the resident index. For other specialized tasks, call skill_search only when needed, then read at most 1–3 relevant Skill bodies and only necessary chunks/resources. After a skill_read result arrives, reuse that result from the current conversation; do not read the same Skill and offset again in this task. Read a later chunk only when the prior result's next_offset shows more content and those instructions are necessary. Same-thread continuation keeps already-read context; do not reload it just because the task continues.\n'''
 
 
 def install_bundled_skills(root, bundle):

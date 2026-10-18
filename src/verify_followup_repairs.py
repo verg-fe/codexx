@@ -176,59 +176,76 @@ command = "python"
 
     def test_android_usb_install_prompt_only_confirms_matching_apk_and_button(self):
         import local_mcp_servers as local
-        prompt='''<hierarchy><node text="USB安装提示"/><node text="正在通过USB安装此应用，是否继续？"/>
-        <node text="Huihui MCP Acceptance Probe"/>
-        <node text="继续安装" clickable="true" bounds="[100,200][500,300]"/></hierarchy>'''
-        home='<hierarchy><node text="桌面"/></hierarchy>'
-        with (patch.object(local,'_read_android_ui_xml',side_effect=[prompt,home]),
-              patch.object(local,'_capture_install_prompt_screenshot',return_value=r'G:\capture.png'),
-              patch.object(local,'_adb',return_value=(0,'')) as adb):
+        prompt={'matches':[{'text':'USB安装提示'},{'text':'Huihui MCP Acceptance Probe'},
+            {'text':'继续安装','bbox':[100,200,500,300]}]}
+        home={'matches':[{'text':'桌面'}]}
+        snap={'snapshot_id':'snap','screenshot_path':r'G:\snap.png'}
+        after={'snapshot_id':'after','screenshot_path':r'G:\after.png'}
+        with (patch.object(local.android_coordinates,'snapshot',side_effect=[snap,after]),
+              patch.object(local.android_coordinates,'_load',return_value={'snapshot_id':'snap','width':1080,'height':2400}),
+              patch.object(local.android_coordinates,'ocr',side_effect=[prompt,home]),
+              patch.object(local.android_coordinates,'map_point',return_value={'device_point':[300,250]}),
+              patch.object(local.android_coordinates,'click',return_value={'after':after}) as click,
+              patch.object(local,'_capture_install_prompt_screenshot',return_value=r'G:\capture.png')):
             result=local._auto_confirm_usb_install('com.mycodex.huihuipushprobe','Huihui MCP Acceptance Probe')
         self.assertTrue(result['detected'])
         self.assertTrue(result['confirmed'])
         self.assertEqual(result['screen_coordinate'],[300,250])
-        adb.assert_called_once_with('shell','input','tap','300','250',timeout=10)
+        self.assertEqual(click.call_args.kwargs['device_point'],[300,250])
 
     def test_android_usb_install_prompt_accepts_only_manifest_localized_label(self):
         import local_mcp_servers as local
-        prompt='''<hierarchy><node text="USB安装提示"/><node text="X浏览器"/>
-        <node text="继续安装" clickable="true" bounds="[100,200][500,300]"/></hierarchy>'''
-        home='<hierarchy><node text="桌面"/></hierarchy>'
-        with (patch.object(local,'_read_android_ui_xml',side_effect=[prompt,home]),
-              patch.object(local,'_capture_install_prompt_screenshot',return_value=r'G:\\capture.png'),
-              patch.object(local,'_adb',return_value=(0,'')) as adb):
+        prompt={'matches':[{'text':'USB安装提示'},{'text':'X浏览器'},
+            {'text':'继续安装','bbox':[100,200,500,300]}]}
+        home={'matches':[{'text':'桌面'}]}
+        snap={'snapshot_id':'snap','screenshot_path':r'G:\snap.png'}
+        after={'snapshot_id':'after','screenshot_path':r'G:\after.png'}
+        with (patch.object(local.android_coordinates,'snapshot',side_effect=[snap,after]),
+              patch.object(local.android_coordinates,'_load',return_value={'snapshot_id':'snap','width':1080,'height':2400}),
+              patch.object(local.android_coordinates,'ocr',side_effect=[prompt,home]),
+              patch.object(local.android_coordinates,'map_point',return_value={'device_point':[300,250]}),
+              patch.object(local.android_coordinates,'click',return_value={'after':after}) as click,
+              patch.object(local,'_capture_install_prompt_screenshot',return_value=r'G:\capture.png')):
             result=local._auto_confirm_usb_install('com.mmbox.xbrowser',['XBrowser','X浏览器'])
         self.assertTrue(result['confirmed'])
         self.assertEqual(result['matched_manifest_label'],'X浏览器')
-        adb.assert_called_once_with('shell','input','tap','300','250',timeout=10)
+        self.assertEqual(click.call_args.kwargs['device_point'],[300,250])
 
     def test_android_usb_install_prompt_with_different_package_label_is_never_clicked(self):
         import local_mcp_servers as local
-        prompt='''<hierarchy><node text="USB安装提示"/><node text="Other application"/>
-        <node text="继续安装" clickable="true" bounds="[100,200][500,300]"/></hierarchy>'''
-        with (patch.object(local,'_read_android_ui_xml',return_value=prompt),
-              patch.object(local,'_capture_install_prompt_screenshot') as capture,
-              patch.object(local,'_adb') as adb):
+        prompt={'matches':[{'text':'USB安装提示'},{'text':'Other application'},
+            {'text':'继续安装','bbox':[100,200,500,300]}]}
+        snap={'snapshot_id':'snap','screenshot_path':r'G:\snap.png'}
+        with (patch.object(local.android_coordinates,'snapshot',return_value=snap),
+              patch.object(local.android_coordinates,'_load',return_value={'snapshot_id':'snap','width':1080,'height':2400}),
+              patch.object(local.android_coordinates,'ocr',return_value=prompt),
+              patch.object(local.android_coordinates,'map_point') as map_point,
+              patch.object(local.android_coordinates,'click') as click,
+              patch.object(local,'_capture_install_prompt_screenshot') as capture):
             with self.assertRaisesRegex(RuntimeError,'未显示待安装 APK'):
                 local._auto_confirm_usb_install('com.mycodex.huihuipushprobe','Huihui MCP Acceptance Probe')
             capture.assert_not_called()
-            adb.assert_not_called()
+            map_point.assert_not_called()
+            click.assert_not_called()
 
     def test_android_usb_install_prompt_falls_back_to_existing_root_only_for_injection_denial(self):
         import local_mcp_servers as local
-        prompt='''<hierarchy><node text="USB安装提示"/><node text="Huihui MCP Acceptance Probe"/>
-        <node text="继续安装" clickable="true" bounds="[100,200][500,300]"/></hierarchy>'''
-        home='<hierarchy><node text="桌面"/></hierarchy>'
-        with (patch.object(local,'_read_android_ui_xml',side_effect=[prompt,home]),
-              patch.object(local,'_capture_install_prompt_screenshot',return_value=r'G:\\capture.png'),
-              patch.object(local,'_adb',side_effect=[(255,'INJECT_EVENTS denied'),(0,'')]) as adb):
+        prompt={'matches':[{'text':'USB安装提示'},{'text':'Huihui MCP Acceptance Probe'},
+            {'text':'继续安装','bbox':[100,200,500,300]}]}
+        home={'matches':[{'text':'桌面'}]}
+        snap={'snapshot_id':'snap','screenshot_path':r'G:\snap.png'}
+        after={'snapshot_id':'after','screenshot_path':r'G:\after.png'}
+        with (patch.object(local.android_coordinates,'snapshot',side_effect=[snap,after]),
+              patch.object(local.android_coordinates,'_load',return_value={'snapshot_id':'snap','width':1080,'height':2400}),
+              patch.object(local.android_coordinates,'ocr',side_effect=[prompt,home]),
+              patch.object(local.android_coordinates,'map_point',return_value={'device_point':[300,250]}),
+              patch.object(local.android_coordinates,'click',side_effect=[RuntimeError('Tap command failed: INJECT_EVENTS denied'),{'after':after}]) as click,
+              patch.object(local,'_capture_install_prompt_screenshot',return_value=r'G:\capture.png')):
             result=local._auto_confirm_usb_install('com.mycodex.huihuipushprobe','Huihui MCP Acceptance Probe')
         self.assertTrue(result['confirmed'])
         self.assertEqual(result['confirmation_method'],'root-su')
-        adb.assert_has_calls([
-            call('shell','input','tap','300','250',timeout=10),
-            call('shell','su','-c','input tap 300 250',timeout=10),
-        ])
+        self.assertEqual(click.call_count,2)
+        self.assertTrue(click.call_args.kwargs['use_root'])
 
     def test_model_args_enable_prompt_cache_and_store_it_on_g(self):
         import core

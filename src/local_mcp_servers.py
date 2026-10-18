@@ -17,7 +17,6 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
-import xml.etree.ElementTree as ET
 import android_coordinates
 
 ROOT = Path(os.environ.get('LOCAL_CODEX_ROOT', r'D:\LocalCodex'))
@@ -366,14 +365,6 @@ def _apk_metadata(apk_path):
             'publisher_identity_confirmed': False}
 
 
-def _read_android_ui_xml():
-    code, output = _adb('shell', 'uiautomator', 'dump', '/sdcard/window.xml', timeout=15)
-    if code:
-        return ''
-    code, xml = _adb('shell', 'cat', '/sdcard/window.xml', timeout=10)
-    return xml if code == 0 and '<hierarchy' in xml else ''
-
-
 def _capture_install_prompt_screenshot():
     configured = os.environ.get('LOCAL_CODEX_ANDROID_INSTALL_PROMPT_CAPTURE', '').strip()
     if not configured:
@@ -391,62 +382,53 @@ def _capture_install_prompt_screenshot():
 
 
 def _auto_confirm_usb_install(package_name, application_label):
-    """Confirm only the OS USB-install prompt that names this exact APK label."""
-    xml = _read_android_ui_xml()
-    if not xml:
-        return {'detected': False, 'confirmed': False, 'reason': '当前没有可读的安装确认界面。'}
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
-        return {'detected': False, 'confirmed': False, 'reason': '当前界面无效或不是安装提示。'}
-    nodes = list(root.iter('node'))
-    visible_text = [str(node.attrib.get(key) or '').strip() for node in nodes for key in ('text','content-desc')]
+    """CPU-OCR confirms only the OS USB-install prompt naming this exact APK label."""
+    snap = android_coordinates.snapshot(_adb, _screenshot, _require_device)
+    state = android_coordinates._load(snap['snapshot_id'])
+    ocr_result = android_coordinates.ocr(snap['snapshot_id'], '', 'contains', .35, 120)
+    rows = ocr_result.get('matches', [])
+    visible_text = [str(row.get('text') or '').strip() for row in rows]
     prompt_markers = ('USB安装提示', '通过USB安装', 'USB install', 'Install via USB')
     is_prompt = any(marker.casefold() in value.casefold() for marker in prompt_markers for value in visible_text)
     if not is_prompt:
         return {'detected': False, 'confirmed': False, 'reason': '未出现 USB 安装确认。'}
     expected_labels = ([application_label] if isinstance(application_label, str) else list(application_label or []))
     expected_labels = [str(value).strip() for value in expected_labels if str(value).strip()]
-    matched_labels = [value for value in visible_text if value in expected_labels]
-    if not matched_labels:
+    matched_labels = [label for label in expected_labels if sum(value == label for value in visible_text) == 1]
+    if len(matched_labels) != 1:
         raise RuntimeError(f'检测到 USB 安装确认，但界面未显示待安装 APK 清单中的精确应用名称（{expected_labels or [package_name]}）；已停止，不会点确认。')
     matched_label = matched_labels[0]
-    confirm_nodes = []
-    for node in nodes:
-        text = str(node.attrib.get('text') or node.attrib.get('content-desc') or '').strip()
-        if text not in ('继续安装', '继续', 'Continue install', 'Install anyway'):
-            continue
-        if node.attrib.get('clickable', '').lower() != 'true':
-            continue
-        bounds = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds', ''))
-        if bounds:
-            left, top, right, bottom = map(int, bounds.groups())
-            confirm_nodes.append(((left + right) // 2, (top + bottom) // 2))
-    if len(confirm_nodes) != 1:
-        raise RuntimeError('USB 安装确认与 APK 名称匹配，但找不到唯一的“继续安装”按钮；已停止，不会盲点屏幕。')
-    prompt_screenshot = _capture_install_prompt_screenshot()
-    x, y = confirm_nodes[0]
-    code, output = _adb('shell', 'input', 'tap', str(x), str(y), timeout=10)
+    confirm_labels = ('继续安装', '继续', 'Continue install', 'Install anyway')
+    confirm_rows = [row for row in rows if str(row.get('text') or '').strip() in confirm_labels
+                    and row.get('bbox') and len(row['bbox']) == 4]
+    if len(confirm_rows) != 1:
+        raise RuntimeError('USB 安装确认与 APK 名称匹配，但 CPU OCR 未找到唯一的“继续安装”文字框；已停止，不会盲点屏幕。')
+    left, top, right, bottom = map(int, confirm_rows[0]['bbox'])
+    mapped = android_coordinates.map_point(state['snapshot_id'], (left + right) / 2,
+        (top + bottom) / 2, state['width'], state['height'])
+    x, y = mapped['device_point']
+    prompt_screenshot = _capture_install_prompt_screenshot() or state['screenshot_path']
     confirmation_method = 'adb-shell'
-    if code and 'INJECT_EVENTS' in output:
-        # Some Android builds deliberately deny touch injection to the adb shell.
-        # The device is explicitly user-authorized and has an existing root path;
-        # use it only for this exact, label-matched confirmation button.
-        code, output = _adb('shell', 'su', '-c', f'input tap {x} {y}', timeout=10)
+    try:
+        tap_result = android_coordinates.click(_adb, _screenshot, _require_device,
+            state['snapshot_id'], device_point=[x, y])
+    except RuntimeError as error:
+        if 'INJECT_EVENTS' not in str(error):
+            raise
+        # This exact APK label and button were OCR-matched; retry the guarded click
+        # through the already-authorized root input path only after shell denial.
+        tap_result = android_coordinates.click(_adb, _screenshot, _require_device,
+            state['snapshot_id'], device_point=[x, y], use_root=True)
         confirmation_method = 'root-su'
-    if code:
-        raise RuntimeError(f'自动确认 USB 安装失败 ({code})：{output}')
     for _ in range(12):
-        time.sleep(0.4)
-        after = _read_android_ui_xml()
-        try:
-            after_nodes = list(ET.fromstring(after).iter('node')) if after else []
-        except ET.ParseError:
-            after_nodes = []
-        after_text = [str(node.attrib.get(key) or '').strip() for node in after_nodes for key in ('text','content-desc')]
+        after_snapshot = tap_result['after']
+        after_result = android_coordinates.ocr(after_snapshot['snapshot_id'], '', 'contains', .35, 120)
+        after_text = [str(row.get('text') or '').strip() for row in after_result.get('matches', [])]
         if not (any(marker.casefold() in value.casefold() for marker in prompt_markers for value in after_text)
                 and matched_label in after_text):
             break
+        time.sleep(0.4)
+        tap_result = {'after': android_coordinates.snapshot(_adb, _screenshot, _require_device)}
     else:
         raise RuntimeError('已点按“继续安装”，但手机仍显示同一 APK 的 USB 安装确认；安装未继续。')
     return {'detected': True, 'confirmed': True, 'application_label': matched_label,
@@ -561,17 +543,6 @@ def _screenshot(destination=''):
         raise RuntimeError(f'设备截图不是有效 PNG (exit={result.returncode})：{result.stderr.decode("utf-8",errors="replace")[:500]}')
     target.write_bytes(result.stdout)
     return {'serial': DEVICE, 'path': str(target.resolve()), 'bytes': len(result.stdout), 'png_valid': True}
-
-
-def _accessibility_tree():
-    _require_device()
-    code, output = _adb('shell', 'uiautomator', 'dump', '/sdcard/window.xml', timeout=40)
-    if code:
-        raise RuntimeError(f'无障碍树导出失败 ({code})：{output}')
-    code, xml = _adb('shell', 'cat', '/sdcard/window.xml', timeout=15)
-    if code or '<hierarchy' not in xml:
-        raise RuntimeError('设备返回的无障碍树 XML 不完整：' + xml[:500])
-    return {'serial': DEVICE, 'xml': xml[:80000], 'truncated': len(xml) > 80000}
 
 
 def _logcat(package_name='', lines=300):
@@ -790,8 +761,7 @@ def _schemas():
             ('android_push_apk', '验证 G 盘 APK 签名后，只复制到已连接手机的 Download 文件夹；不会安装或启动。', {'type':'object','properties':{'apk_path':{'type':'string'},'destination_name':{'type':'string','maxLength':160}},'required':['apk_path']}),
             ('android_install_apks', '自动安装 G 盘 APK；必须先核对包名和签名 SHA256，再提供精确包名、可信证书 SHA256；同时检查最低 Android 版本、ABI 和 split 版本；只操作已固定的设备，不启动应用。', {'type':'object','properties':{'apk_paths':{'type':'array','items':{'type':'string'}},'package_name':{'type':'string'},'expected_certificate_sha256':{'type':'string'},'allow_downgrade':{'type':'boolean','default':False}},'required':['apk_paths','package_name','expected_certificate_sha256']}),
             ('android_launch', '启动已安装应用；登录/授权停留在用户操作界面。', {'type':'object','properties':{'package_name':{'type':'string'}},'required':['package_name']}),
-            ('android_accessibility_tree', '导出设备当前 UIAutomator XML 无障碍树。', {'type':'object','properties':{}}),
-            ('android_screenshot', '保存并验证真实二进制 PNG 设备截图。', {'type':'object','properties':{'destination':{'type':'string','default':''}}}),
+            ('android_screenshot', '保存并验证真实二进制 PNG 设备截图；可见文字应在同一帧运行 CPU OCR，不查询无障碍树。', {'type':'object','properties':{'destination':{'type':'string','default':''}}}),
             ('android_logcat', '读取最近设备日志；给出包名时按进程 PID 定向。', {'type':'object','properties':{'package_name':{'type':'string','default':''},'lines':{'type':'integer','default':300}}}),
         ] + android_coordinates.schemas(),
         'design-control': [
@@ -823,6 +793,12 @@ def _dispatch(service, name, args):
     if service in ('android','android-coordinates') and name=='screen_map_point':
         from screen_coordinates import map_point
         return map_point(**args)
+    if service in ('android','android-coordinates') and name=='screen_ocr':
+        from screen_coordinates import ocr_image
+        return ocr_image(**args)
+    if service in ('android','android-coordinates') and name=='screen_find_symbol':
+        from screen_coordinates import find_symbol_image
+        return find_symbol_image(**args)
     if service == 'voice':
         from creative_tools import dispatch
         return dispatch(ROOT, service, name, args)
@@ -855,13 +831,12 @@ def _dispatch(service, name, args):
         if name == 'android_push_apk': return _push_apk(args['apk_path'], args.get('destination_name',''))
         if name == 'android_install_apks': return _install_apks(args['apk_paths'], args['package_name'], args['expected_certificate_sha256'], bool(args.get('allow_downgrade',False)))
         if name == 'android_launch': return _launch_package(args['package_name'])
-        if name == 'android_accessibility_tree': return _accessibility_tree()
         if name == 'android_screenshot':
             try:
                 result=android_coordinates.snapshot(_adb,_screenshot,_require_device)
             except (OSError,RuntimeError,ValueError) as error:
                 result=_screenshot(args.get('destination',''))
-                return result | {'control_tree_available':False,'note':'Control tree unavailable; request android_ui_request_vision with this image path and reason before viewing. Do not guess taps.','control_error':str(error)[:300]}
+                return result | {'screenshot_only':True,'ocr_required_for_text':True,'note':'Run CPU OCR on this screenshot for text targets; use CPU symbol/template matching for glyphs. Do not query an accessibility tree or guess taps.','capture_error':str(error)[:300]}
             destination=args.get('destination','')
             if destination:
                 target=Path(destination).expanduser();target.parent.mkdir(parents=True,exist_ok=True)
@@ -870,7 +845,7 @@ def _dispatch(service, name, args):
                 register_snapshot(target,android_coordinates._load(result['snapshot_id']))
                 result['path']=str(target.resolve())
             else:result['path']=result['screenshot_path']
-            return result | {'control_tree_available':True,'note':'Visible controls are included as text: use locate and guarded click, not view_image by default. Unlabelled/custom targets may need explicit android_ui_request_vision.'}
+            return result | {'screenshot_only':True,'ocr_required_for_text':True,'note':'This snapshot contains an original-size screenshot only. For text call android_ui_ocr on this snapshot; for glyphs use CPU symbol/template matching. General vision is only a last fallback.'}
         if name == 'android_logcat': return _logcat(args.get('package_name',''), args.get('lines',300))
     if service == 'design-control':
         if name == 'design_status': return _design_status()

@@ -210,7 +210,7 @@ class TaskArtifacts:
         if not state:
             return ''
         latest = [{'id': b['id'], 'language': b['language'], 'complete': b['complete'],
-                   'chars': b['chars']} for b in data['drafts'][-10:]]
+                   'chars': b['chars']} for b in data['drafts'][-4:]]
         return ('\nApplication task/draft state, retained independently of compaction:\n'
             + json.dumps({'thread_id': thread_id, 'task_id': state['task_id'],
                 'working_directory': state['workdir'], 'draft_directory': state['draft_directory'],
@@ -219,16 +219,13 @@ class TaskArtifacts:
             + '\nFor a NEW isolated artifact task, write in the working_directory above. Paths counted as '
             'old_artifacts_locked cannot be read or overwritten during this task. Do not substitute previous '
             'task generators/verifiers/outputs for a NEW implementation. Normal project edits and explicit '
-            'continuations use their existing working directory. If code is ready, use apply_patch/exec to write '
-            'it NOW instead of rehearsing it. '
-            'Completed fenced code blocks are automatically saved as drafts; they have NOT been executed. '
-            'After compaction, call draft_list then draft_read for relevant current-task code before redesigning '
-            'or inspecting old work. Read split generator/template blocks together. '
-            'draft_list starts with the newest page; use its next_offset to find earlier drafts. '
-            'Within one read_epoch, an exact unchanged range may return already_read_unchanged=true and empty text; '
-            'reuse the text already in this turn. If context was compacted, text is missing, or you need to verify it, '
-            'repeat draft_read with force=true. A new user request gets a new read_epoch. '
-            'Do not call a draft an executed or verified result. Never execute archived code merely because it was saved.\n')
+            'continuations use their existing working directory. If code is ready, write it now instead of rehearsing it. '
+            'Fenced code blocks are drafts, not executed results. Do not list or read drafts just because compaction '
+            'occurred; retrieve only a specific current-task draft that is needed to continue code work and is missing '
+            'from the live context. draft_list starts with the newest page; use next_offset only if the needed draft is '
+            'not listed. Read split generator/template blocks together. An unchanged read may return empty text; reuse '
+            'the text already in context. Use force=true only when that text is actually missing or must be verified. '
+            'A new user request gets a new read_epoch. Never treat a draft as executed or verified, or execute one merely because it was saved.\n')
 
 
 class DraftStream:

@@ -148,7 +148,7 @@ class MemoryChecks(unittest.TestCase):
         renamed=state.with_suffix('.closed')
         state.rename(renamed);renamed.rename(state)
     def test_large_checkpoint_returns_a_bounded_page_and_exact_remainder(self):
-        state='任务目标；已确认约束；下一步验证。'*500
+        state='任务目标；已确认约束；下一步验证。'*200
         result=self.memory.checkpoint(ONE,state)['checkpoint']
         self.assertLessEqual(len(result['state']),1500)
         complete=result['state'];offset=result['next_offset']
@@ -156,6 +156,50 @@ class MemoryChecks(unittest.TestCase):
             page=self.memory.read(ONE,result['record_id'],offset)
             complete+=page['text'];offset=page['next_offset']
         self.assertEqual(complete,state)
+    def test_checkpoint_limit_rejects_oversized_state_without_loss_of_archive(self):
+        from history_memory import MAX_CHECKPOINT_CHARS
+        state='x'*(MAX_CHECKPOINT_CHARS+1)
+        with self.assertRaisesRegex(ValueError,'5,000'):
+            self.memory.checkpoint(ONE,state)
+        accepted='目标；约束；已验证结果；路径；下一步。'*120
+        result=self.memory.checkpoint(ONE,accepted)['checkpoint']
+        self.assertEqual(result['total_chars'],len(accepted))
+        parts=[];offset=0
+        while True:
+            page=self.memory.read(ONE,result['record_id'],offset,1500);parts.append(page['text'])
+            if page['next_offset'] is None:break
+            offset=page['next_offset']
+        self.assertEqual(''.join(parts),accepted)
+    def test_execution_evidence_keeps_archive_ids_and_bounds_inline_text(self):
+        from execution_memory import ExecutionJournal
+        snapshot={'thread_id':ONE,'turn_id':'turn',
+            'failures':[{'record_id':chr(97+i)*24,'name':'tool','status':'failed',
+                         'target_validation':'reported_failure','detail':'E'*500} for i in range(8)],
+            'recent_successes':[{'record_id':'s'*24,'name':'tool','status':'succeeded',
+                                 'target_validation':'verified'}],
+            'diagnostic_findings':[],
+            'latest_user_requests':[{'record_id':'u'*24,'timestamp':'now','preview':'P'*320,'total_chars':9000}]}
+        text=ExecutionJournal.instructions(snapshot)
+        self.assertIn('h'*24,text)
+        self.assertNotIn('a'*24,text)
+        self.assertLessEqual(text.count('"record_id"'),5)
+        self.assertLess(len(text),2600)
+        self.assertIn('history_read(record_id)',text)
+        compact=ExecutionJournal.compact_snapshot(snapshot)
+        self.assertEqual(len(compact['failures']),3)
+        self.assertEqual(len(compact['latest_user_requests']),1)
+        self.assertEqual(len(compact['failures'][-1]['detail']),220)
+        self.assertEqual(len(compact['latest_user_requests'][0]['preview']),320)
+    def test_latest_request_preview_points_to_exact_archived_user_message(self):
+        from execution_memory import ExecutionJournal
+        text='当前请求包含完整约束、目录和后续步骤。'*180
+        path=self.rollout(ONE,line(text))
+        evidence=ExecutionJournal(self.memory).snapshot(ONE)
+        request=evidence['latest_user_requests'][0]
+        self.assertEqual(request['preview'],text[:320])
+        self.assertEqual(request['total_chars'],len(text))
+        self.assertEqual(request['record_id'],self.memory.record_id(path,'0:0'))
+        self.assertEqual(self.memory.read(ONE,request['record_id'])['text'],text[:1200])
     def test_performance_scheduling_preserves_inference_precision_and_budgets(self):
         settings={'model':core.MODEL,'backend':'vulkan','cpu_offload':False,
                   'kv_cache_location':'auto','api_key':'test'}

@@ -22,6 +22,25 @@ def register_snapshot(path, state):
     (JOBS / ('image-' + _key(path) + '.json')).write_text(json.dumps(record), encoding='utf-8')
 
 
+def record_cpu_target_attempt(path, method):
+    """Bind a completed CPU OCR/symbol pass to the screenshot it actually used."""
+    target=Path(path).resolve()
+    index=JOBS / ('image-' + _key(target) + '.json')
+    if not index.is_file():return False
+    try:
+        record=json.loads(index.read_text(encoding='utf-8'))
+        if record.get('sha256')!=hashlib.sha256(target.read_bytes()).hexdigest():return False
+        state_path=JOBS/(str(record.get('snapshot_id',''))+'.json')
+        state=json.loads(state_path.read_text(encoding='utf-8'))
+        if time.time()-float(state['created_at'])>float(state.get('expires_after_seconds',180)):return False
+        field='cpu_ocr_attempted' if method=='ocr' else 'cpu_symbol_attempted'
+        state[field]=True
+        state_path.write_text(json.dumps(state),encoding='utf-8')
+        return True
+    except (OSError,ValueError,KeyError,TypeError):
+        return False
+
+
 def request_vision(path, reason):
     if not str(reason).strip():
         raise ValueError('Explain the unfamiliar/custom visual target first.')
@@ -33,6 +52,20 @@ def request_vision(path, reason):
     raw = target.read_bytes()
     if not raw.startswith(b'\x89PNG\r\n\x1a\n'):
         raise ValueError('A valid original PNG screenshot is required.')
+    index=JOBS / ('image-' + _key(target) + '.json')
+    if not index.is_file():
+        raise ValueError('Capture a fresh android_ui_snapshot and run CPU OCR or symbol/template matching on that exact snapshot before requesting vision.')
+    try:
+        registration=json.loads(index.read_text(encoding='utf-8'))
+        if registration.get('sha256')!=hashlib.sha256(raw).hexdigest():
+            raise ValueError('Screenshot changed; capture a fresh snapshot and repeat CPU target acquisition.')
+        state=json.loads((JOBS/(registration['snapshot_id']+'.json')).read_text(encoding='utf-8'))
+        if time.time()-float(state['created_at'])>float(state.get('expires_after_seconds',180)):
+            raise ValueError('Snapshot expired; acquire a fresh screenshot and repeat CPU target acquisition.')
+    except (OSError,KeyError,TypeError) as error:
+        raise ValueError('Fresh snapshot metadata is unavailable; reacquire the screenshot before vision fallback.') from error
+    if not (state.get('cpu_ocr_attempted') or state.get('cpu_symbol_attempted')):
+        raise ValueError('General vision is gated until CPU OCR (for text) or CPU symbol/template matching (for glyphs) has run on this exact snapshot.')
     JOBS.mkdir(parents=True, exist_ok=True)
     record = {'sha256': hashlib.sha256(raw).hexdigest(), 'expires_at': time.time()+180,
               'reason': str(reason)[:500]}
@@ -62,11 +95,15 @@ def image_control_text(path):
                  Path(r'D:\LocalCodex\logs\android').resolve())
         if state is None and not any(target.resolve().is_relative_to(root) for root in roots):
             return None
-        if state is None or time.time()-state['created_at'] > state['expires_after_seconds']:
-            return '[Android control-first routing: this tool screenshot has no fresh matching control snapshot. Call android_ui_snapshot first to read visible text, descriptions and clickable candidates. Unknown/self-drawn content remains unknown. If the target cannot be found in controls or known templates, call android_ui_request_vision(image_path, reason), then reopen this original image. Do not guess taps.]'
-        rows = state['candidates']
-        brief = [{k:r.get(k) for k in ('id','text','description','resource_id','bounds','center','clickable')} for r in rows[:40]]
-        return '[Android control-first routing; image pixels deferred. This is a control-tree observation, not a complete visual description. Unlabelled/custom areas remain unknown. Use android_ui_locate for additional targets, icon_find for known templates; for an unfamiliar target request android_ui_request_vision then reopen the image. Never guess taps.]\n' + json.dumps({'snapshot_id':state['snapshot_id'],'original_size':[state['width'],state['height']], 'candidates':brief,'truncated':len(rows)>40,'unlabelled_candidates':sum(not (r.get('text') or r.get('description')) for r in rows)}, ensure_ascii=False)
+        if state is None or time.time()-state['created_at'] > state.get('expires_after_seconds',180):
+            return '[Android OCR-first routing; screenshot pixels withheld. Capture android_ui_snapshot, then run CPU android_ui_ocr for text or CPU symbol/template matching for glyphs. General vision is allowed only after those CPU paths fail on a fresh snapshot.]'
+        return ('[Android OCR-first routing; screenshot pixels withheld. This is a fresh screenshot-only snapshot, '
+                'not an accessibility-tree result. Run android_ui_ocr on this snapshot for text, or CPU '
+                'symbol/template matching for a glyph. Only request general vision after a CPU attempt on '
+                'this exact snapshot fails to identify the target. Do not guess coordinates.]\n' +
+                json.dumps({'snapshot_id':state['snapshot_id'],'original_size':[state['width'],state['height']],
+                    'cpu_ocr_attempted':bool(state.get('cpu_ocr_attempted')),
+                    'cpu_symbol_attempted':bool(state.get('cpu_symbol_attempted'))},ensure_ascii=False))
     except (OSError, ValueError, KeyError, TypeError):
         # A broken index never becomes a fabricated observation.
         return None

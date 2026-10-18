@@ -7,12 +7,12 @@ description: 需要在 IDA 中查函数、反编译、查看字符串和交叉�
 
 ## 自动启动工具
 
-`ida_local.start_ida(target_path)` 已接入。用户给出目标文件后，如 IDA 未运行，调用此工具，传入现有文件的绝对路径；不再要求用户手动启用插件。工具使用随附 Python 3.8，自动加载 MCP，日志在 G:/LocalCodex/ida-jobs。返回 ready 后核对 current_project；返回 already_running 时必须核对当前文件是否是用户目标，不能将另一数据库的结果混用；返回 starting 时稍后检查连接，不重复启动。已有进程但 MCP 无响应时，诊断已有窗口和日志。2026-10-09 实测冷启动、重复调用防重复实例、错误路径拒绝及启动后反汇编/反编译通过；当前工具发现总数 28。
+遇到 `WinError 10061`/connection refused 时，不要声称需要用户手动启动，也不要重复查询技能或工具目录。对 `check_connection`、`get_project_metadata` 的连接拒绝，桥接会自动启动 `G:\IDA Pro v7.6.210427\ida64.exe` 并重试一次。仅验证连通性时，`ida_local.start_ida` 可省略 `target_path`，启动空白 IDA Pro；分析指定目标时才传入已存在文件的绝对路径。`ready` 表示插件已连通；`already_running` 必须核对当前项目；`starting` 等待后只检查一次，不重复启动。空白项目的 metadata 为空不代表服务不可用。若已存在 IDA 进程但插件仍不响应，先读工具返回的 PID、日志路径和启动状态；只在发现明确的用户交互弹窗或错误时报告阻塞，不启动第二个实例。
 ## 当前启动入口（2026-10-09 验收）
 
-需要启动 IDA 时使用 `G:/LocalCodex/tools/ida-mcp/Launch-IDA-Huihui.cmd`，把目标文件作为参数传入。此启动器只对子进程固定随附 Python 3.8.10，清除继承的 Python 环境变量，将用户目录与临时文件放在 G 盘，并设置 Qt 软件渲染。不要直接启动 ida64.exe 后假定 Python 环境正确。
+使用 `ida_local.start_ida` 启动器；桥接会对 IDA Pro 子进程设置随附 Python 3.8.10、清理继承的 Python 覆盖变量，将用户目录与临时文件放在 G 盘，并设置 Qt 软件渲染。不要通过 IDA Free 替代 `G:/IDA Pro v7.6.210427/ida64.exe`，也不要直接启动 exe 后假定 MCP 已监听。
 
-该目录中的程序实际内核版本为 7.7，目录名 7.6 不代表程序版本。MCP 名称为 `ida_local`，只连接本机 127.0.0.1:26868。先 check_connection 并用 get_project_metadata 核对目标文件，再分析函数；未连接时先检查已有 IDA 窗口，避免重复启动多个实例。验证报告在 `G:/LocalCodex-work/mycodex-repair-20261009/artifacts/ida-huihui-setup/mcp-acceptance.json`：真实 stdio MCP 返回 27 个工具，原生 x64 测试函数成功反汇编、反编译为 return 42。此结果不代表 Dalvik DEX 支持 Hex-Rays 反编译，也不代表全部 27 个工具已重新测试。
+该目录中的程序实际内核版本为 7.7，目录名 7.6 不代表程序版本。MCP 名称为 `ida_local`，只连接本机 127.0.0.1:26868。连通后用 `get_project_metadata` 核对当前数据库，再分析函数；metadata 显示空项目时，先区分“IDA 正常但尚未加载目标”与“插件未监听”。验证报告在 `G:/LocalCodex-work/mycodex-repair-20261009/artifacts/ida-huihui-setup/mcp-acceptance.json`：真实 stdio MCP 返回 27 个工具，原生 x64 测试函数成功反汇编、反编译为 return 42。此结果不代表 Dalvik DEX 支持 Hex-Rays 反编译，也不代表全部 27 个工具已重新测试。
 
 以下是较早的诊断与验收记录；其中 PID 和启动状态不能当作当前状态。
 
@@ -58,4 +58,3 @@ The launcher changes only its child process environment; it does not modify glob
 - The overall Android action “add Baidu to X Browser bookmarks” remains incomplete. ADB shell input and UIAutomator injection were denied with Android `INJECT_EVENTS`; do not bypass this with root. The IDA DEX read-only chain is verified, but it is not an end-to-end bookmark action.
 - A temporary partial clone directory is present at `G:/LocalCodex-work/mycodex-repair-20261009/artifacts/xbrower-bookmark-chain/ida-write-test-clone`; its three files are copies created during the blocked clone attempt. It was not opened or modified. Keep it separate from the verified original.
 - The last launcher start did not show a Windows publisher prompt; this does not mean or imply that the warning was suppressed. Do not auto-accept or weaken Windows security.
-

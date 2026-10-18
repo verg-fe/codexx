@@ -1,3 +1,14 @@
+# codexx / 我的 Codex v93
+
+Windows 本地编程工作台。v93 更新 IDA MCP 连接拒绝恢复流程，并提供完整 Windows 运行包。
+
+- [下载 MyCodex v93](https://github.com/verg-fe/codexx/releases/tag/v93-20261018)
+- [v93 发布说明与 SHA-256](docs/release-v93.md)
+- [发布清单](verification/v93/release-manifest.json)
+- 本版包内不含旧 ARTEX 技能、模型权重、用户会话、运行日志或本机凭据。IDA MCP 全新进程端到端验收尚未完成。
+
+---
+
 # codexx / 我的 Codex v70
 
 修复 Windows 状态文件占用被误报为 503：状态写入可重试且不阻断推理，接口错误保留中文 JSON。

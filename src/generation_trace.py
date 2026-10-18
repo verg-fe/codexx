@@ -16,6 +16,9 @@ METADATA_FIELDS = ('thread_id', 'model', 'context_limit', 'runtime_context', 'kv
                    'prompt_tokens', 'reasoning_budget', 'media_converted_to_png', 'backend',
                    'retained_execution_failures', 'artifact_task_id')
 METADATA_FIELDS += ('archived_tool_images', 'stale_tool_images', 'pending_tool_images', 'user_images', 'request_started_at')
+METADATA_FIELDS += ('skill_reads_this_turn', 'skill_reads_earlier_history', 'skill_output_tokens_this_turn')
+METADATA_FIELDS += ('tool_directory_active', 'tools_before_directory', 'tools_after_directory',
+                    'selected_tool_names')
 DELTA_CHANNELS = {
     'response.reasoning_text.delta': 'reasoning',
     'response.reasoning_summary_text.delta': 'reasoning_summary',
@@ -90,7 +93,11 @@ class GenerationTrace:
         if pending is not None:self._write(pending)
 
     def diagnostic(self, warning):
-        self._write({'event':'diagnostic', **warning}, flush=True)
+        if isinstance(warning, dict):
+            record = dict(warning)
+        else:
+            record = {'message': str(warning)}
+        self._write({'event':'diagnostic', **record}, flush=True)
 
     def _write(self, record, flush=False):
         if record.get('event')!='generated_delta':self._flush_delta()

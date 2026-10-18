@@ -320,6 +320,128 @@ def chat_content(content):
             raise ValueError('Unsupported content for token counting')
     return converted
 
+
+def _skill_output_text(output):
+    if isinstance(output, str):
+        return output
+    if isinstance(output, list):
+        return '\n'.join(str(item.get('text','')) for item in output if isinstance(item,dict))
+    return json.dumps(output,ensure_ascii=False) if output is not None else ''
+
+
+def _skill_result_metadata(output_text):
+    """Extract only safe metadata from a skill_read tool result, never its body."""
+    pending=[output_text]
+    seen=set()
+    while pending:
+        text=pending.pop(0)
+        if not isinstance(text,str) or text in seen:
+            continue
+        seen.add(text)
+        try:
+            value=json.loads(text)
+        except (TypeError,ValueError):
+            continue
+        if isinstance(value,dict):
+            if isinstance(value.get('name'),str) and ('body' in value or 'total_chars' in value):
+                return {key:value.get(key) for key in ('name','path','revision','offset','total_chars','next_offset')}
+            for key in ('structuredContent','result','content'):
+                nested=value.get(key)
+                if isinstance(nested,str):pending.append(nested)
+                elif isinstance(nested,list):
+                    pending.extend(item.get('text','') for item in nested if isinstance(item,dict))
+                elif isinstance(nested,dict):pending.append(json.dumps(nested,ensure_ascii=False))
+    return None
+
+
+def skill_read_request_stats(body):
+    """Summarize Skill bodies present in the exact Responses input, without logging text."""
+    inputs=body.get('input',[])
+    if not isinstance(inputs,list):
+        return {'skill_reads_this_turn':[],'skill_reads_earlier_history':[],'skill_output_tokens_this_turn':0}
+    # Runtime MCP/tool-catalog hints are sometimes appended as bare
+    # {role: user, content: ...} items. They are not a new user turn and must
+    # not move Skill reads into the historical bucket.
+    last_user=max((index for index,item in enumerate(inputs)
+                   if isinstance(item,dict) and item.get('role')=='user' and
+                   item.get('type') in ('message','input_message')),default=-1)
+    calls={}
+    for item in inputs:
+        if not isinstance(item,dict) or item.get('type')!='function_call':
+            continue
+        name=str(item.get('name','')).split('__')[-1]
+        if name=='skill_read' and item.get('call_id'):
+            calls[item['call_id']]=True
+    current=[]
+    historical=[]
+    for index,item in enumerate(inputs):
+        if not isinstance(item,dict) or item.get('type')!='function_call_output':
+            continue
+        if item.get('call_id') not in calls:
+            continue
+        output_text=_skill_output_text(item.get('output'))
+        metadata=_skill_result_metadata(output_text)
+        if not metadata:
+            continue
+        entry={key:value for key,value in metadata.items() if value is not None}
+        entry['output_chars']=len(output_text)
+        is_current=(index>last_user) if last_user>=0 else True
+        if is_current:
+            try:
+                if selected_backend()=='moe4all':
+                    entry['output_tokens']=None
+                else:
+                    entry['output_tokens']=len(api('/tokenize',{
+                        'content':output_text,'add_special':True,'parse_special':True},timeout=30)['tokens'])
+            except (OSError,ValueError,KeyError,TypeError):
+                entry['output_tokens']=None
+            current.append(entry)
+        else:
+            historical.append(entry)
+    return {'skill_reads_this_turn':current[-10:],
+            'skill_reads_earlier_history':historical[-20:],
+            'skill_output_tokens_this_turn':sum(row.get('output_tokens') or 0 for row in current)}
+
+
+def skill_read_reuse_context(body):
+    """Return a short guard against repeating a completed Skill chunk this turn."""
+    inputs=body.get('input',[])
+    if not isinstance(inputs,list):return ''
+    last_user=max((index for index,item in enumerate(inputs)
+                   if isinstance(item,dict) and item.get('role')=='user' and
+                   item.get('type') in ('message','input_message')),default=-1)
+    completed={item.get('call_id') for item in inputs[last_user+1:]
+               if isinstance(item,dict) and item.get('type')=='function_call_output' and item.get('call_id')}
+    reads=[]
+    for item in inputs[last_user+1:]:
+        if not isinstance(item,dict) or item.get('type')!='function_call' or item.get('call_id') not in completed:
+            continue
+        if str(item.get('name','')).split('__')[-1]!='skill_read':continue
+        raw=item.get('arguments',{})
+        try:args=json.loads(raw) if isinstance(raw,str) else raw
+        except (ValueError,TypeError):args={}
+        if isinstance(args,dict) and isinstance(args.get('input'),str):
+            try:args=json.loads(args['input'])
+            except (ValueError,TypeError):args={}
+        if not isinstance(args,dict):args={}
+        name=args.get('name')
+        if isinstance(name,str) and name:
+            offset=args.get('offset',0)
+            offset=offset if isinstance(offset,int) and offset>=0 else 0
+            reads.append((name,offset))
+    unique=list(dict.fromkeys(reads))
+    if not unique:return ''
+    labels=', '.join(f'{name} offset {offset}' for name,offset in unique[-8:])
+    return ('Already returned Skill chunks in this user task: '+labels+'. Reuse those exact results; '
+            'do not call skill_read again for a listed Skill/offset. Read only a different next_offset '
+            'if the returned chunk proves more instructions are required. If a read failed, inspect its '
+            'error and change the attempt instead of resending it unchanged.')
+
+
+def encode_upstream_body(body):
+    """Serialize the final normalized Responses request exactly as sent upstream."""
+    return json.dumps(body,ensure_ascii=False).encode('utf-8')
+
 def count_prompt_tokens(body, route):
     if selected_backend()=='moe4all':
         # This engine does not expose a tokenizer route. It grows physical KV
@@ -387,6 +509,11 @@ def route_inference(body, route, settings, name, media_converted=0, vision_stats
         'output_reserve':reserve,'target_context':target,'count_error':count_error,
         'media_converted_to_png':media_converted,
         'phase':'switching' if previous.get('context')!=target else 'ready'}
+    if route=='/v1/responses':
+        try:record.update(skill_read_request_stats(body))
+        except (OSError,ValueError,TypeError,KeyError):
+            record.update(skill_reads_this_turn=[],skill_reads_earlier_history=[],
+                          skill_output_tokens_this_turn=None)
     record.update(vision_stats or {})
     record['request_started_at']=time.time()
     record.update(fitted)
@@ -542,6 +669,8 @@ class Handler(BaseHTTPRequestHandler):
                     vision_stats['deferred_ui_images']=deferred_ui_images
                     original_input_count = len(body.get('input', []))
                     vision_stats.update(register_tools(body))
+                    skill_reuse=skill_read_reuse_context(body)
+                    if skill_reuse:append_runtime_state(body,skill_reuse)
                     try:
                         retained_failures=retain_execution_state(body)
                     except (OSError,ValueError,sqlite3.Error) as error:
@@ -580,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 if route=='/v1/responses' and task_state:
                     routing['artifact_task_id']=task_state['task_id']
                     routing['draft_directory']=task_state['draft_directory']
-                payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
+                payload = encode_upstream_body(body)
                 streaming = bool(body.get('stream'))
                 del body
             except (ValueError, TypeError, GuardStopped) as error:

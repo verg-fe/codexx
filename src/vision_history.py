@@ -47,9 +47,10 @@ def archive_observed_tool_images(body):
             if stale_ui and not observed:
                 content[index] = {'type': 'input_text', 'text':
                     '[Historical UI screenshot from before the latest user instruction. The current '
-                    'page is unverified: use the current accessibility tree first, then known icon '
-                    'matching; request a fresh CPU vision image only for unfamiliar/custom UI. '
-                    'Do not reuse old coordinates. Original: ' + (str(path) or str(item.get('call_id'))) + ']'}
+                    'page is unverified: capture a fresh screenshot and run CPU OCR for text targets; '
+                    'use CPU symbol/template matching for icons, then request CPU vision only for '
+                    'unfamiliar/custom UI. Do not query an accessibility tree or reuse old coordinates. '
+                    'Original: ' + (str(path) or str(item.get('call_id'))) + ']'}
                 stats['stale_tool_images'] += 1
                 continue
             if not (screenshot and observed):
@@ -58,8 +59,9 @@ def archive_observed_tool_images(body):
             content[index] = {'type': 'input_text', 'text':
                 '[Previously observed tool screenshot. Its visual observation is in the following '
                 'assistant messages; do not repeat the screenshot solely to inspect unchanged state. '
-                'Use the current accessibility tree for controls; reopen the original image only '
-                'when the task needs its pixels. Original: ' + (str(path) or str(item.get('call_id'))) + ']'}
+                'For a new visible target, use a fresh screenshot and CPU OCR for text or CPU '
+                'symbol/template matching for icons; do not query an accessibility tree. Reopen the '
+                'original image only when the task needs its pixels. Original: ' + (str(path) or str(item.get('call_id'))) + ']'}
             stats['archived_tool_images'] += 1
     return stats
 

@@ -1,0 +1,35 @@
+{
+  "version": "v93",
+  "tag": "v93-20261018",
+  "build_time_local": "2026-10-15 11:11:40 Asia/Shanghai",
+  "base_source_commit": "0e6512d7bd532ee367b584c5d73dfb6406d95c1c",
+  "asset": {
+    "name": "MyCodex-v93-windows.zip",
+    "bytes": 72658492,
+    "sha256": "4b393e1f36a7008b7731743fa9a6367305fbc6af94b0bb670e01bca04f289aee",
+    "packed_files": 270,
+    "unpacked_bytes": 175905466
+  },
+  "included_skills": [
+    "android-demo-ui",
+    "android-packer-analysis",
+    "frida-mobile-security",
+    "github-private-publish",
+    "learn-and-reuse",
+    "r0idamcp-ida-local",
+    "scopeweaver-source-review",
+    "self-configure-tools",
+    "snapshot-bound-ui-control",
+    "tool-routing-and-learning",
+    "vmware-local",
+    "windows-desktop-control",
+    "wish-to-result"
+  ],
+  "legacy_artex_skill_in_package": false,
+  "verification": {
+    "zip_integrity": "passed",
+    "build": "existing deployment package verified",
+    "fresh_process_ida_mcp_acceptance": "not verified in this upload"
+  },
+  "runtime_adapter_version": "2026-10-15-runtime-89"
+}

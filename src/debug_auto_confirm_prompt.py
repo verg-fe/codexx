@@ -1,83 +1,84 @@
-"""End-to-end diagnostic of Xiaomi's verified USB-install confirmation prompt."""
+"""End-to-end diagnostic of the USB-install confirmation using CPU OCR only."""
 import json
-import os
 from pathlib import Path
-import re
-import subprocess
 import sys
 import time
-import xml.etree.ElementTree as ET
-sys.path.insert(0,str(Path(__file__).parent))
+
+sys.path.insert(0, str(Path(__file__).parent))
 import local_mcp_servers as local
-work=Path(r'G:\LocalCodex-work\mycodex-repair-20261009\artifacts\android-mcp-test')
-apk=work/'huihui-apk-push-probe.apk'
-package='com.mycodex.huihuipushprobe'
-label='Huihui MCP Acceptance Probe'
-pre=work/'manual-confirm-before.png'
-post=work/'manual-confirm-after.png'
+
+work = Path(r'G:\LocalCodex-work\mycodex-repair-20261009\artifacts\android-mcp-test')
+apk = work / 'huihui-apk-push-probe.apk'
+package = 'com.mycodex.huihuipushprobe'
+label = 'Huihui MCP Acceptance Probe'
+pre = work / 'manual-confirm-before.png'
+post = work / 'manual-confirm-after.png'
+markers = ('USB安装提示', '通过USB安装', 'USB install', 'Install via USB')
+buttons = ('继续安装', '继续', 'Continue install', 'Install anyway')
 
 
-def markers(xml):
-    root=ET.fromstring(xml)
-    nodes=list(root.iter('node'))
-    texts=[str(n.attrib.get(k) or '').strip() for n in nodes for k in ('text','content-desc')]
-    is_prompt=any(mark in text for mark in ('USB安装提示','通过USB安装','USB install','Install via USB') for text in texts)
-    button=[]
-    for node in nodes:
-        text=str(node.attrib.get('text') or node.attrib.get('content-desc') or '').strip()
-        bounds=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]',node.attrib.get('bounds',''))
-        if text in ('继续安装','继续','Continue install','Install anyway') and node.attrib.get('clickable')=='true' and bounds:
-            left,top,right,bottom=map(int,bounds.groups());button.append(((left+right)//2,(top+bottom)//2))
-    return texts,is_prompt,button
-
-
-def capture(path):
-    result=subprocess.run([str(local.ADB),'-s',local.DEVICE,'exec-out','screencap','-p'],
-        capture_output=True,timeout=20,creationflags=local.NO_WINDOW)
-    if result.returncode or not result.stdout.startswith(b'\x89PNG\r\n\x1a\n'): raise RuntimeError('Bad PNG screenshot')
-    path.write_bytes(result.stdout)
+def capture_ocr():
+    snap = local.android_coordinates.snapshot(local._adb, local._screenshot, local._require_device)
+    state = local.android_coordinates._load(snap['snapshot_id'])
+    result = local.android_coordinates.ocr(snap['snapshot_id'], '', 'contains', .35, 120)
+    return snap, state, result
 
 
 try:
-    code,installed=local._adb('shell','pm','path',package)
-    if code==0 and 'package:' in installed:
-        code,output=local._adb('uninstall',package,timeout=60)
-        if code or 'Success' not in output: raise RuntimeError('Could not reset the dedicated acceptance package')
-    code,install=local._adb('install','-r',str(apk),timeout=120)
-    if code or 'Success' not in install: raise RuntimeError(f'Install command failed: {install}')
-    xml='';texts=[];is_prompt=False;buttons=[]
-    for _ in range(4):
-        xml=local._read_android_ui_xml()
-        if xml: texts,is_prompt,buttons=markers(xml)
-        if is_prompt: break
-        time.sleep(.3)
-    if not is_prompt: raise RuntimeError('Expected USB install dialog did not appear.')
-    if label not in texts: raise RuntimeError('USB install prompt did not show the exact acceptance app label.')
-    if len(buttons)!=1: raise RuntimeError(f'Expected one confirm button; got {buttons}')
-    (work/'manual-confirm-before.xml').write_text(xml,encoding='utf-8')
-    capture(pre)
-    x,y=buttons[0]
-    code,tap=local._adb('shell','input','tap',str(x),str(y),timeout=10)
-    method='adb-shell'
-    if code and 'INJECT_EVENTS' in tap:
-        code,tap=local._adb('shell','su','-c',f'input tap {x} {y}',timeout=10)
-        method='root-su'
-    if code: raise RuntimeError('ADB tap failed: '+tap)
-    time.sleep(.8)
-    after_xml=local._read_android_ui_xml()
-    after_texts,still_prompt,_=markers(after_xml) if after_xml else ([],False,[])
-    capture(post)
-    if still_prompt and label in after_texts: raise RuntimeError('Prompt remained after exact button tap.')
-    code,path=local._adb('shell','pm','path',package)
-    if code or 'package:' not in path: raise RuntimeError('Package manager did not report the test app installed after confirmation.')
-    result={'ok':True,'dialog_seen':True,'app_label_matched':True,'confirm_button_bounds_center':[x,y],
-            'dialog_dismissed_after_tap':True,'installed':True,'app_launched':False,
-            'confirmation_method':method,
-            'before_screenshot':str(pre),'after_screenshot':str(post),
-            'prompt_nodes':[n for n in texts if any(word in n for word in ('USB','安装','继续','Huihui'))]}
+    code, installed = local._adb('shell', 'pm', 'path', package)
+    if code == 0 and 'package:' in installed:
+        code, output = local._adb('uninstall', package, timeout=60)
+        if code or 'Success' not in output:
+            raise RuntimeError('Could not reset the dedicated acceptance package')
+    code, install = local._adb('install', '-r', str(apk), timeout=120)
+    if code or 'Success' not in install:
+        raise RuntimeError(f'Install command failed: {install}')
+
+    snap, state, ocr = capture_ocr()
+    rows = ocr.get('matches', [])
+    texts = [str(row.get('text') or '').strip() for row in rows]
+    is_prompt = any(marker.casefold() in text.casefold() for marker in markers for text in texts)
+    if not is_prompt:
+        raise RuntimeError('Expected USB install dialog was not identified by OCR.')
+    if texts.count(label) != 1:
+        raise RuntimeError('USB install prompt did not show one exact acceptance-app label.')
+    confirm_rows = [row for row in rows if str(row.get('text') or '').strip() in buttons
+                    and row.get('bbox') and len(row['bbox']) == 4]
+    if len(confirm_rows) != 1:
+        raise RuntimeError(f'Expected one OCR confirmation box; got {len(confirm_rows)}')
+    left, top, right, bottom = map(int, confirm_rows[0]['bbox'])
+    point = local.android_coordinates.map_point(state['snapshot_id'], (left + right) / 2,
+        (top + bottom) / 2, state['width'], state['height'])['device_point']
+    pre.write_bytes(Path(state['screenshot_path']).read_bytes())
+    method = 'adb-shell'
+    try:
+        result = local.android_coordinates.click(local._adb, local._screenshot, local._require_device,
+            state['snapshot_id'], device_point=point)
+    except RuntimeError as error:
+        if 'INJECT_EVENTS' not in str(error):
+            raise
+        result = local.android_coordinates.click(local._adb, local._screenshot, local._require_device,
+            state['snapshot_id'], device_point=point, use_root=True)
+        method = 'root-su'
+    post_state = local.android_coordinates._load(result['after']['snapshot_id'])
+    post.write_bytes(Path(post_state['screenshot_path']).read_bytes())
+    after_ocr = local.android_coordinates.ocr(result['after']['snapshot_id'], '', 'contains', .35, 120)
+    after_texts = [str(row.get('text') or '').strip() for row in after_ocr.get('matches', [])]
+    still_prompt = any(marker.casefold() in text.casefold() for marker in markers for text in after_texts)
+    if still_prompt and label in after_texts:
+        raise RuntimeError('Prompt remained after the OCR-mapped guarded tap.')
+    code, path = local._adb('shell', 'pm', 'path', package)
+    if code or 'package:' not in path:
+        raise RuntimeError('Package manager did not report the test app installed after confirmation.')
+    result = {'ok': True, 'dialog_seen': True, 'app_label_matched': True,
+        'confirm_device_point': point, 'dialog_dismissed_after_tap': True, 'installed': True,
+        'app_launched': False, 'confirmation_method': method,
+        'ocr_engine': ocr.get('engine'), 'ocr_providers': ocr.get('providers'),
+        'before_screenshot': str(pre), 'after_screenshot': str(post)}
 finally:
-    code,path=local._adb('shell','pm','path',package)
-    if code==0 and 'package:' in path:
-        cleanup_code,cleanup=local._adb('uninstall',package,timeout=60)
-        if cleanup_code or 'Success' not in cleanup: raise RuntimeError('Dedicated probe cleanup failed.')
-print(json.dumps(result,ensure_ascii=False))
+    code, path = local._adb('shell', 'pm', 'path', package)
+    if code == 0 and 'package:' in path:
+        cleanup_code, cleanup = local._adb('uninstall', package, timeout=60)
+        if cleanup_code or 'Success' not in cleanup:
+            raise RuntimeError('Dedicated probe cleanup failed.')
+print(json.dumps(result, ensure_ascii=False))

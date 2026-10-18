@@ -107,6 +107,10 @@ class DraftProtection(unittest.TestCase):
         newest=self.store.list(TID)
         self.assertEqual(newest['drafts'][-1]['id'],'000000000001-0000')
         self.assertEqual(newest['total_drafts'],46);self.assertEqual(newest['next_offset'],40)
+        inline=self.store.instructions(TID)
+        self.assertIn('000000000001-0000',inline)
+        self.assertNotIn('ffffffffffff-0000',inline)
+        self.assertIn('total_drafts',inline)
         older=self.store.list(TID,offset=newest['next_offset'])
         self.assertEqual(len(older['drafts']),6);self.assertIsNone(older['next_offset'])
         self.assertEqual(older['drafts'][0]['id'],'ffffffffffff-0000')
@@ -122,6 +126,13 @@ class DraftProtection(unittest.TestCase):
         self.assertIn('123456789abc-0000',json.dumps(body['input']));self.assertIn('draft_read',json.dumps(body['input']))
         memory=HistoryMemory(self.store.root)
         self.assertEqual(memory.call('draft_read',{'thread_id':TID,'draft_id':'123456789abc-0000'})['text'],'x=1\n')
+
+    def test_compaction_does_not_force_draft_listing_or_rereading(self):
+        self.begin('画 SVG 动画')
+        instructions=self.store.instructions(TID)
+        self.assertIn('Do not list or read drafts just because compaction occurred',instructions)
+        self.assertIn('missing from the live context',instructions)
+        self.assertNotIn('After compaction, call draft_list',instructions)
 
     def test_generation_trace_wires_drafts_without_duplicating_done_text(self):
         state,_=self.begin('画 SVG 动画')
